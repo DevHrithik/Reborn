@@ -1,8 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ComponentLoading } from '@/components/shared/loading';
+import { dashboardService } from '@/lib/data/dashboard';
 import {
   Users,
   Activity,
@@ -15,13 +18,75 @@ import {
   Zap,
   Star,
   Shield,
+  RefreshCw,
 } from 'lucide-react';
 
+interface DashboardMetrics {
+  totalUsers: number;
+  activeUsers: number;
+  newUsersToday: number;
+  supportTickets: number;
+  communityPosts: number;
+  pendingModeration: number;
+  systemHealth: 'healthy' | 'warning' | 'critical';
+  recentActivity: ActivityItem[];
+}
+
+interface ActivityItem {
+  id: string;
+  type:
+    | 'user_registration'
+    | 'support_ticket'
+    | 'community_post'
+    | 'system_event';
+  title: string;
+  description: string;
+  timestamp: string;
+  user?: string;
+  status?: string;
+}
+
 export default function DashboardPage() {
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
+
+  const loadDashboardData = async () => {
+    try {
+      const data = await dashboardService.getDashboardMetrics();
+      setMetrics(data);
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (isLoading) {
+    return <ComponentLoading />;
+  }
+
+  if (!metrics) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Failed to load dashboard data</p>
+          <Button onClick={loadDashboardData}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   const stats = [
     {
       title: 'Total Users',
-      value: '12,543',
+      value: metrics.totalUsers.toLocaleString(),
       change: '+12%',
       changeType: 'positive' as const,
       icon: Users,
@@ -30,7 +95,7 @@ export default function DashboardPage() {
     },
     {
       title: 'Active Workouts',
-      value: '8,392',
+      value: metrics.activeUsers.toLocaleString(),
       change: '+8%',
       changeType: 'positive' as const,
       icon: Activity,
@@ -39,17 +104,17 @@ export default function DashboardPage() {
     },
     {
       title: 'Community Posts',
-      value: '2,847',
-      change: '-3%',
-      changeType: 'negative' as const,
+      value: metrics.communityPosts.toLocaleString(),
+      change: '+23%',
+      changeType: 'positive' as const,
       icon: MessageSquare,
       color: 'from-purple-500 to-pink-500',
       bgColor: 'bg-gradient-to-br from-purple-50 to-pink-50',
     },
     {
       title: 'Support Tickets',
-      value: '147',
-      change: '+24%',
+      value: metrics.supportTickets.toLocaleString(),
+      change: '-5%',
       changeType: 'negative' as const,
       icon: HelpCircle,
       color: 'from-orange-500 to-red-500',
@@ -57,40 +122,62 @@ export default function DashboardPage() {
     },
   ];
 
-  const recentActivity = [
-    {
-      id: 1,
-      type: 'user_registration',
-      message: 'New user registered: John Doe',
-      time: '2 minutes ago',
-      status: 'success',
-      icon: UserPlus,
-    },
-    {
-      id: 2,
-      type: 'support_ticket',
-      message: 'Support ticket #1234 opened',
-      time: '5 minutes ago',
-      status: 'warning',
-      icon: HelpCircle,
-    },
-    {
-      id: 3,
-      type: 'community_post',
-      message: 'Community post flagged for review',
-      time: '12 minutes ago',
-      status: 'error',
-      icon: Shield,
-    },
-    {
-      id: 4,
-      type: 'workout_completed',
-      message: '500+ users completed workouts today',
-      time: '1 hour ago',
-      status: 'success',
-      icon: Zap,
-    },
-  ];
+  const recentActivity = metrics.recentActivity.map((activity, index) => ({
+    id: index + 1,
+    type: activity.type,
+    message: `${activity.title}: ${activity.description}`,
+    time: formatTimeAgo(activity.timestamp),
+    status: getActivityStatus(activity.status),
+    icon: getActivityIcon(activity.type),
+  }));
+
+  function getActivityIcon(type: string) {
+    switch (type) {
+      case 'user_registration':
+        return UserPlus;
+      case 'support_ticket':
+        return HelpCircle;
+      case 'community_post':
+        return MessageSquare;
+      case 'system_event':
+        return Shield;
+      default:
+        return Activity;
+    }
+  }
+
+  function getActivityStatus(status?: string) {
+    switch (status) {
+      case 'completed':
+        return 'success';
+      case 'pending':
+        return 'warning';
+      case 'urgent':
+        return 'error';
+      case 'healthy':
+        return 'success';
+      case 'warning':
+        return 'warning';
+      case 'critical':
+        return 'error';
+      default:
+        return 'success';
+    }
+  }
+
+  function formatTimeAgo(timestamp: string) {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diffInMinutes = Math.floor(
+      (now.getTime() - time.getTime()) / (1000 * 60)
+    );
+
+    if (diffInMinutes < 1) return 'Just now';
+    if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`;
+    if (diffInMinutes < 1440)
+      return `${Math.floor(diffInMinutes / 60)} hours ago`;
+    return `${Math.floor(diffInMinutes / 1440)} days ago`;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
@@ -109,6 +196,7 @@ export default function DashboardPage() {
             <Button
               variant="outline"
               className="shadow-lg hover:shadow-xl transition-all duration-300"
+              onClick={loadDashboardData}
             >
               <Eye className="h-4 w-4 mr-2" />
               View Reports
@@ -285,16 +373,60 @@ export default function DashboardPage() {
                   <Star className="h-4 w-4 text-green-500" />
                 </div>
               </div>
-              <div className="flex items-center justify-between p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl border border-yellow-200 shadow-sm">
+              <div
+                className={`flex items-center justify-between p-4 rounded-xl border shadow-sm ${
+                  metrics.systemHealth === 'healthy'
+                    ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
+                    : metrics.systemHealth === 'warning'
+                      ? 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200'
+                      : 'bg-gradient-to-r from-red-50 to-pink-50 border-red-200'
+                }`}
+              >
                 <div>
-                  <p className="text-sm font-semibold text-yellow-800">
-                    Storage
+                  <p
+                    className={`text-sm font-semibold ${
+                      metrics.systemHealth === 'healthy'
+                        ? 'text-green-800'
+                        : metrics.systemHealth === 'warning'
+                          ? 'text-yellow-800'
+                          : 'text-red-800'
+                    }`}
+                  >
+                    System Health
                   </p>
-                  <p className="text-xs text-yellow-600">85% capacity</p>
+                  <p
+                    className={`text-xs ${
+                      metrics.systemHealth === 'healthy'
+                        ? 'text-green-600'
+                        : metrics.systemHealth === 'warning'
+                          ? 'text-yellow-600'
+                          : 'text-red-600'
+                    }`}
+                  >
+                    Status: {metrics.systemHealth}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 bg-yellow-500 rounded-full animate-pulse"></div>
-                  <TrendingUp className="h-4 w-4 text-yellow-500" />
+                  <div
+                    className={`h-3 w-3 rounded-full animate-pulse ${
+                      metrics.systemHealth === 'healthy'
+                        ? 'bg-green-500'
+                        : metrics.systemHealth === 'warning'
+                          ? 'bg-yellow-500'
+                          : 'bg-red-500'
+                    }`}
+                  ></div>
+                  {metrics.systemHealth === 'healthy' ? (
+                    <Star className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <TrendingUp
+                      className={`h-4 w-4 ${
+                        metrics.systemHealth === 'warning'
+                          ? 'text-yellow-500'
+                          : 'text-red-500'
+                      }`}
+                    />
+                  )}
                 </div>
               </div>
             </div>

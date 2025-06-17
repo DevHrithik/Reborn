@@ -10,12 +10,16 @@ interface AdminLayoutProps {
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Desktop sidebar */}
       <div className="hidden md:block">
-        <Sidebar />
+        <Sidebar
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
       </div>
 
       {/* Mobile sidebar overlay */}
@@ -26,14 +30,17 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             onClick={() => setSidebarOpen(false)}
           />
           <div className="relative">
-            <Sidebar />
+            <Sidebar collapsed={false} onToggleCollapse={() => {}} />
           </div>
         </div>
       )}
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Header onMenuClick={() => setSidebarOpen(true)} />
+        <Header
+          onMenuClick={() => setSidebarOpen(true)}
+          sidebarCollapsed={sidebarCollapsed}
+        />
         <main className="flex-1 overflow-auto">{children}</main>
       </div>
     </div>

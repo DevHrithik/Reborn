@@ -13,12 +13,26 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Bell, Search, Menu, Settings, User, LogOut } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/components/providers/auth-provider';
 
 interface HeaderProps {
   onMenuClick?: () => void;
+  sidebarCollapsed?: boolean;
 }
 
-export function Header({ onMenuClick }: HeaderProps) {
+export function Header({ onMenuClick, sidebarCollapsed = false }: HeaderProps) {
+  const { user, signOut } = useAuth();
+
+  const getInitials = (name: string | null) => {
+    if (!name) return 'AD';
+    return name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   return (
     <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white/80 backdrop-blur-lg px-6 shadow-sm">
       {/* Left section */}
@@ -33,7 +47,11 @@ export function Header({ onMenuClick }: HeaderProps) {
         </Button>
 
         {/* Search */}
-        <div className="relative w-96 max-w-sm">
+        <div
+          className={`relative transition-all duration-300 ${
+            sidebarCollapsed ? 'w-[500px]' : 'w-96'
+          } max-w-sm`}
+        >
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
           <Input
             placeholder="Search users, workouts, posts..."
@@ -124,9 +142,12 @@ export function Header({ onMenuClick }: HeaderProps) {
               className="relative h-10 w-10 rounded-full hover:bg-gray-100 transition-colors p-0"
             >
               <Avatar className="h-10 w-10 shadow-lg border-2 border-white">
-                <AvatarImage src="/avatars/admin.png" alt="Admin" />
+                <AvatarImage
+                  src="/avatars/admin.png"
+                  alt={user?.full_name || 'Admin'}
+                />
                 <AvatarFallback className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-semibold">
-                  AD
+                  {getInitials(user?.full_name || null)}
                 </AvatarFallback>
               </Avatar>
             </Button>
@@ -141,15 +162,15 @@ export function Header({ onMenuClick }: HeaderProps) {
                 <div className="flex items-center gap-3">
                   <Avatar className="h-8 w-8">
                     <AvatarFallback className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-xs">
-                      AD
+                      {getInitials(user?.full_name || null)}
                     </AvatarFallback>
                   </Avatar>
                   <div>
                     <p className="text-sm font-medium leading-none text-gray-900">
-                      Admin User
+                      {user?.full_name || 'Admin User'}
                     </p>
                     <p className="text-xs leading-none text-gray-500 mt-1">
-                      admin@reborn.com
+                      {user?.email || 'admin@reborn.com'}
                     </p>
                   </div>
                 </div>
@@ -165,7 +186,10 @@ export function Header({ onMenuClick }: HeaderProps) {
               Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="hover:bg-red-50 text-red-600 transition-colors cursor-pointer">
+            <DropdownMenuItem
+              className="hover:bg-red-50 text-red-600 transition-colors cursor-pointer"
+              onClick={() => signOut()}
+            >
               <LogOut className="h-4 w-4 mr-3" />
               Log out
             </DropdownMenuItem>

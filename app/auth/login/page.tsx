@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Eye, EyeOff, Lock, Mail, Sparkles } from 'lucide-react';
-import { authService } from '@/lib/auth';
+import { useAuth } from '@/components/providers/auth-provider';
 import { useRouter } from 'next/navigation';
 import { ROUTES } from '@/utils/constants';
 
@@ -21,31 +21,20 @@ export default function LoginPage() {
   const [email, setEmail] = useState('admin@reborn.com');
   const [password, setPassword] = useState('admin123');
   const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const { signIn, isLoading } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
     setError('');
 
-    try {
-      const result = await authService.signIn(email, password);
+    const success = await signIn(email, password);
 
-      if (result) {
-        // Store session token in localStorage (simple approach)
-        localStorage.setItem('admin_session_token', result.session_token);
-        localStorage.setItem('admin_user', JSON.stringify(result.user));
-
-        router.push(ROUTES.DASHBOARD);
-      } else {
-        setError('Invalid email or password');
-      }
-    } catch (err) {
-      setError('An error occurred during login');
-    } finally {
-      setIsLoading(false);
+    if (success) {
+      router.push(ROUTES.DASHBOARD);
+    } else {
+      setError('Invalid email or password');
     }
   };
 
