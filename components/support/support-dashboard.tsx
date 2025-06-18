@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,12 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   MessageSquare,
   Clock,
@@ -49,102 +55,26 @@ import {
   Mail,
   Calendar,
 } from 'lucide-react';
-
-// Mock data for demonstration
-const mockTickets = [
-  {
-    id: 1001,
-    title: 'Unable to sync workout data',
-    description:
-      "My workout data from yesterday isn't showing up in the app. I completed a full workout but it's not reflected in my progress.",
-    status: 'open',
-    priority: 'high',
-    category: 'technical',
-    user: {
-      name: 'Sarah Johnson',
-      email: 'sarah@example.com',
-      avatar_url: null,
-    },
-    assigned_agent: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: 1002,
-    title: 'Billing question about subscription',
-    description:
-      'I was charged twice for my monthly subscription. Can you help me understand why this happened?',
-    status: 'in_progress',
-    priority: 'medium',
-    category: 'billing',
-    user: { name: 'Mike Chen', email: 'mike@example.com', avatar_url: null },
-    assigned_agent: { name: 'John Smith', email: 'john@reborn.com' },
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    updated_at: new Date(Date.now() - 3600000).toISOString(),
-  },
-  {
-    id: 1003,
-    title: 'Feature request: Dark mode',
-    description:
-      'It would be great if the app had a dark mode option for better viewing in low light conditions.',
-    status: 'resolved',
-    priority: 'low',
-    category: 'feature_request',
-    user: { name: 'Emily Davis', email: 'emily@example.com', avatar_url: null },
-    assigned_agent: { name: 'Sarah Johnson', email: 'sarah@reborn.com' },
-    created_at: new Date(Date.now() - 172800000).toISOString(),
-    updated_at: new Date(Date.now() - 7200000).toISOString(),
-  },
-];
-
-const mockMessages = [
-  {
-    id: 1,
-    ticket_id: 1001,
-    sender_type: 'user',
-    content:
-      "Hi, I'm having trouble with my workout data not syncing. Can you help?",
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-    sender: { name: 'Sarah Johnson', avatar_url: null },
-  },
-  {
-    id: 2,
-    ticket_id: 1001,
-    sender_type: 'agent',
-    content:
-      "Hello Sarah! I'd be happy to help you with the sync issue. Can you tell me what device you're using and when you last tried to sync?",
-    created_at: new Date(Date.now() - 1800000).toISOString(),
-    sender: { name: 'Support Agent', avatar_url: null },
-  },
-];
-
-const mockStats = {
-  totalTickets: 1247,
-  openTickets: 23,
-  inProgressTickets: 45,
-  resolvedToday: 12,
-  averageResponseTime: 25,
-  satisfactionRating: 4.2,
-  agentPerformance: [
-    {
-      agent_name: 'John Smith',
-      assigned_tickets: 15,
-      resolved_tickets: 12,
-      avg_response_time: 25,
-      satisfaction_rating: 4.2,
-    },
-    {
-      agent_name: 'Sarah Johnson',
-      assigned_tickets: 18,
-      resolved_tickets: 16,
-      avg_response_time: 18,
-      satisfaction_rating: 4.5,
-    },
-  ],
-};
+import { useToast } from '@/hooks/ui/use-toast';
+import {
+  SupportService,
+  type SupportTicket,
+  type SupportMessage,
+  type SupportStats,
+} from '@/lib/data/support';
 
 export default function SupportDashboard() {
-  const [selectedTicket, setSelectedTicket] = useState<any>(null);
+  const { toast } = useToast();
+
+  // State management
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [stats, setStats] = useState<SupportStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(
+    null
+  );
+  const [ticketMessages, setTicketMessages] = useState<SupportMessage[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [filters, setFilters] = useState({
     status: 'all',
@@ -153,6 +83,211 @@ export default function SupportDashboard() {
     assigned_to: 'all',
     search: '',
   });
+
+  // Load initial data
+  useEffect(() => {
+    loadData();
+  }, [filters]);
+
+  // Set up real-time subscriptions
+  useEffect(() => {
+    const newTicketsSubscription = SupportService.subscribeToNewTickets(
+      newTicket => {
+        setTickets(prev => [newTicket, ...prev]);
+        setStats(prev =>
+          prev ? { ...prev, totalTickets: prev.totalTickets + 1 } : null
+        );
+
+        toast({
+          title: 'New Support Ticket',
+          description: `New ticket from ${newTicket.user?.name || 'Unknown User'}: ${newTicket.title}`,
+        });
+      }
+    );
+
+    return () => {
+      newTicketsSubscription.unsubscribe();
+    };
+  }, [toast]);
+
+  // Subscribe to selected ticket updates
+  useEffect(() => {
+    if (!selectedTicket) return;
+
+    const ticketUpdatesSubscription = SupportService.subscribeToTicketUpdates(
+      selectedTicket.id,
+      updatedTicket => {
+        setSelectedTicket(updatedTicket);
+        setTickets(prev =>
+          prev.map(t => (t.id === updatedTicket.id ? updatedTicket : t))
+        );
+      }
+    );
+
+    const messagesSubscription = SupportService.subscribeToTicketMessages(
+      selectedTicket.id,
+      newMessage => {
+        setTicketMessages(prev => [...prev, newMessage]);
+      }
+    );
+
+    return () => {
+      ticketUpdatesSubscription.unsubscribe();
+      messagesSubscription.unsubscribe();
+    };
+  }, [selectedTicket]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [ticketsData, statsData] = await Promise.all([
+        SupportService.getAllTickets(50, 0, filters),
+        SupportService.getSupportStats(),
+      ]);
+
+      setTickets(ticketsData);
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error loading support data:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load support data. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadTicketMessages = async (ticketId: number) => {
+    try {
+      setLoadingMessages(true);
+      const messages = await SupportService.getTicketMessages(ticketId);
+      setTicketMessages(messages);
+    } catch (error) {
+      console.error('Error loading messages:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load messages.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const handleTicketSelect = async (ticket: SupportTicket) => {
+    setSelectedTicket(ticket);
+    await loadTicketMessages(ticket.id);
+  };
+
+  const handleSendMessage = async () => {
+    if (!selectedTicket || !newMessage.trim()) return;
+
+    try {
+      // Using a mock agent ID - in a real app, this would come from auth context
+      const agentId = '9d57f6de-2f1a-4850-b50d-6c44dd3e2aa4';
+
+      await SupportService.addMessage(selectedTicket.id, agentId, 'agent', {
+        content: newMessage,
+        message_type: 'text',
+      });
+
+      setNewMessage('');
+      toast({
+        title: 'Message Sent',
+        description: 'Your message has been sent to the user.',
+      });
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to send message. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleStatusChange = async (ticketId: number, newStatus: string) => {
+    try {
+      await SupportService.updateTicket(ticketId, { status: newStatus as any });
+
+      // Update local state
+      setTickets(prev =>
+        prev.map(t =>
+          t.id === ticketId ? { ...t, status: newStatus as any } : t
+        )
+      );
+
+      if (selectedTicket && selectedTicket.id === ticketId) {
+        setSelectedTicket(prev =>
+          prev ? { ...prev, status: newStatus as any } : null
+        );
+      }
+
+      toast({
+        title: 'Status Updated',
+        description: `Ticket status changed to ${newStatus}`,
+      });
+
+      // Refresh stats
+      const newStats = await SupportService.getSupportStats();
+      setStats(newStats);
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update ticket status.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handlePriorityChange = async (
+    ticketId: number,
+    newPriority: string
+  ) => {
+    try {
+      await SupportService.updateTicket(ticketId, {
+        priority: newPriority as any,
+      });
+
+      // Update local state
+      setTickets(prev =>
+        prev.map(t =>
+          t.id === ticketId ? { ...t, priority: newPriority as any } : t
+        )
+      );
+
+      if (selectedTicket && selectedTicket.id === ticketId) {
+        setSelectedTicket(prev =>
+          prev ? { ...prev, priority: newPriority as any } : null
+        );
+      }
+
+      toast({
+        title: 'Priority Updated',
+        description: `Ticket priority changed to ${newPriority}`,
+      });
+    } catch (error) {
+      console.error('Error updating priority:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update ticket priority.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleFilterChange = (key: string, value: string) => {
+    const newFilters = { ...filters };
+    if (value === 'all' || value === '') {
+      (newFilters as any)[key] = 'all';
+    } else {
+      (newFilters as any)[key] = value;
+    }
+    setFilters(newFilters);
+  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -195,12 +330,10 @@ export default function SupportDashboard() {
     });
   };
 
-  const filteredTickets = mockTickets.filter(ticket => {
+  const filteredTickets = tickets.filter(ticket => {
     if (filters.status !== 'all' && ticket.status !== filters.status)
       return false;
     if (filters.priority !== 'all' && ticket.priority !== filters.priority)
-      return false;
-    if (filters.category !== 'all' && ticket.category !== filters.category)
       return false;
     if (
       filters.search &&
@@ -210,425 +343,244 @@ export default function SupportDashboard() {
     return true;
   });
 
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      // In a real app, this would send the message via API
-      console.log('Sending message:', newMessage);
-      setNewMessage('');
-    }
-  };
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Tickets</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockStats.totalTickets}</div>
-            <p className="text-xs text-muted-foreground">
-              {mockStats.resolvedToday} resolved today
-            </p>
-          </CardContent>
-        </Card>
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Total Tickets
+              </CardTitle>
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.totalTickets}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.openTickets} open
+              </p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Open Tickets</CardTitle>
-            <AlertCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockStats.openTickets}</div>
-            <p className="text-xs text-muted-foreground">
-              {mockStats.inProgressTickets} in progress
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">In Progress</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.inProgressTickets}
+              </div>
+              <p className="text-xs text-muted-foreground">Being handled</p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Avg Response Time
-            </CardTitle>
-            <Timer className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {mockStats.averageResponseTime}m
-            </div>
-            <p className="text-xs text-muted-foreground">
-              ↓ 12% from last week
-            </p>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Resolved Today
+              </CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.resolvedToday}</div>
+              <p className="text-xs text-muted-foreground">Completed today</p>
+            </CardContent>
+          </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Satisfaction</CardTitle>
-            <Star className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {mockStats.satisfactionRating}
-            </div>
-            <p className="text-xs text-muted-foreground">Out of 5 stars</p>
-          </CardContent>
-        </Card>
-      </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Avg Response Time
+              </CardTitle>
+              <Timer className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.averageResponseTime}m
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {stats.satisfactionRating}/5 satisfaction
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-      {/* Main Content */}
-      <Tabs defaultValue="tickets" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs defaultValue="tickets" className="space-y-4">
+        <TabsList>
           <TabsTrigger value="tickets">Tickets</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="knowledge">Knowledge Base</TabsTrigger>
           <TabsTrigger value="agents">Agents</TabsTrigger>
         </TabsList>
 
-        {/* Tickets Tab */}
         <TabsContent value="tickets" className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Tickets List */}
-            <div className="lg:col-span-2 space-y-4">
-              {/* Filters */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Filter className="h-5 w-5" />
-                    Filters
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    <Select
-                      value={filters.status}
-                      onValueChange={value =>
-                        setFilters(prev => ({ ...prev, status: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Status</SelectItem>
-                        <SelectItem value="open">Open</SelectItem>
-                        <SelectItem value="in_progress">In Progress</SelectItem>
-                        <SelectItem value="waiting_user">
-                          Waiting User
-                        </SelectItem>
-                        <SelectItem value="resolved">Resolved</SelectItem>
-                        <SelectItem value="closed">Closed</SelectItem>
-                      </SelectContent>
-                    </Select>
+          {/* Filters */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Filter & Search</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center space-x-2">
+                  <Input
+                    placeholder="Search tickets..."
+                    value={filters.search}
+                    onChange={e => handleFilterChange('search', e.target.value)}
+                    className="w-64"
+                  />
+                  <Button onClick={loadData} size="sm">
+                    <Search className="h-4 w-4" />
+                  </Button>
+                </div>
 
-                    <Select
-                      value={filters.priority}
-                      onValueChange={value =>
-                        setFilters(prev => ({ ...prev, priority: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Priority</SelectItem>
-                        <SelectItem value="urgent">Urgent</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="low">Low</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <Select
+                  onValueChange={value => handleFilterChange('status', value)}
+                  defaultValue="all"
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="waiting_user">Waiting User</SelectItem>
+                    <SelectItem value="resolved">Resolved</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                  </SelectContent>
+                </Select>
 
-                    <Select
-                      value={filters.category}
-                      onValueChange={value =>
-                        setFilters(prev => ({ ...prev, category: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Categories</SelectItem>
-                        <SelectItem value="technical">Technical</SelectItem>
-                        <SelectItem value="billing">Billing</SelectItem>
-                        <SelectItem value="account">Account</SelectItem>
-                        <SelectItem value="feature_request">
-                          Feature Request
-                        </SelectItem>
-                        <SelectItem value="bug_report">Bug Report</SelectItem>
-                        <SelectItem value="general">General</SelectItem>
-                      </SelectContent>
-                    </Select>
+                <Select
+                  onValueChange={value => handleFilterChange('priority', value)}
+                  defaultValue="all"
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Priority</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="urgent">Urgent</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
 
-                    <Select
-                      value={filters.assigned_to}
-                      onValueChange={value =>
-                        setFilters(prev => ({ ...prev, assigned_to: value }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Agents</SelectItem>
-                        <SelectItem value="unassigned">Unassigned</SelectItem>
-                        <SelectItem value="agent1">John Smith</SelectItem>
-                        <SelectItem value="agent2">Sarah Johnson</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <div className="relative">
-                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <Input
-                        placeholder="Search tickets..."
-                        className="pl-8"
-                        value={filters.search}
-                        onChange={e =>
-                          setFilters(prev => ({
-                            ...prev,
-                            search: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Tickets List */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Support Tickets</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {filteredTickets.map(ticket => (
-                      <div
-                        key={ticket.id}
-                        className={`p-4 border rounded-lg cursor-pointer transition-colors hover:bg-gray-50 ${
-                          selectedTicket?.id === ticket.id
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200'
-                        }`}
-                        onClick={() => setSelectedTicket(ticket)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium">#{ticket.id}</span>
-                              <Badge
-                                className={getPriorityColor(ticket.priority)}
-                              >
-                                {ticket.priority}
-                              </Badge>
-                              <Badge className={getStatusColor(ticket.status)}>
-                                {ticket.status.replace('_', ' ')}
-                              </Badge>
-                            </div>
-                            <h4 className="font-medium text-gray-900 mb-1">
-                              {ticket.title}
-                            </h4>
-                            <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                              {ticket.description}
-                            </p>
-                            <div className="flex items-center gap-4 text-xs text-gray-500">
-                              <div className="flex items-center gap-1">
-                                <User className="h-3 w-3" />
-                                {ticket.user?.name}
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
-                                {formatDate(ticket.created_at)}
-                              </div>
-                              {ticket.assigned_agent && (
-                                <div className="flex items-center gap-1">
-                                  <UserCheck className="h-3 w-3" />
-                                  {ticket.assigned_agent.name}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={
-                                ticket.status === 'resolved' ||
-                                ticket.status === 'closed'
-                              }
+          {/* Tickets Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Support Tickets</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Subject</TableHead>
+                    <TableHead>User</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredTickets.map(ticket => (
+                    <TableRow key={ticket.id}>
+                      <TableCell className="font-medium">
+                        #{ticket.id}
+                      </TableCell>
+                      <TableCell>
+                        <div className="max-w-xs truncate">{ticket.title}</div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarImage src={ticket.user?.avatar_url} />
+                            <AvatarFallback>
+                              {ticket.user?.name?.charAt(0) || 'U'}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">{ticket.user?.name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={ticket.status}
+                          onValueChange={value =>
+                            handleStatusChange(ticket.id, value)
+                          }
+                        >
+                          <SelectTrigger className="w-32">
+                            <Badge className={getStatusColor(ticket.status)}>
+                              {ticket.status}
+                            </Badge>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="open">Open</SelectItem>
+                            <SelectItem value="in_progress">
+                              In Progress
+                            </SelectItem>
+                            <SelectItem value="waiting_user">
+                              Waiting User
+                            </SelectItem>
+                            <SelectItem value="resolved">Resolved</SelectItem>
+                            <SelectItem value="closed">Closed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={ticket.priority}
+                          onValueChange={value =>
+                            handlePriorityChange(ticket.id, value)
+                          }
+                        >
+                          <SelectTrigger className="w-24">
+                            <Badge
+                              className={getPriorityColor(ticket.priority)}
                             >
-                              <CheckCircle2 className="h-4 w-4 mr-1" />
-                              Resolve
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-
-                    {filteredTickets.length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        No tickets found matching your criteria
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Chat Interface */}
-            <div className="lg:col-span-1">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MessageSquare className="h-5 w-5" />
-                    {selectedTicket
-                      ? `Ticket #${selectedTicket.id}`
-                      : 'Select a Ticket'}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-0">
-                  {selectedTicket ? (
-                    <div className="flex flex-col h-[600px]">
-                      {/* Ticket Header */}
-                      <div className="p-4 border-b bg-gray-50">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <h3 className="font-semibold">
-                              {selectedTicket.title}
-                            </h3>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Badge
-                                className={getPriorityColor(
-                                  selectedTicket.priority
-                                )}
-                              >
-                                {selectedTicket.priority}
-                              </Badge>
-                              <Badge
-                                className={getStatusColor(
-                                  selectedTicket.status
-                                )}
-                              >
-                                {selectedTicket.status.replace('_', ' ')}
-                              </Badge>
-                              <span className="text-sm text-gray-500">
-                                #{selectedTicket.id}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage
-                                src={
-                                  selectedTicket.user?.avatar_url || undefined
-                                }
-                              />
-                              <AvatarFallback>
-                                {selectedTicket.user?.name?.charAt(0) || 'U'}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="text-right">
-                              <div className="text-sm font-medium">
-                                {selectedTicket.user?.name}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {selectedTicket.user?.email}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Messages */}
-                      <ScrollArea className="flex-1 p-4">
-                        <div className="space-y-4">
-                          {mockMessages.map(message => (
-                            <div
-                              key={message.id}
-                              className={`flex gap-3 ${message.sender_type === 'agent' ? 'justify-end' : 'justify-start'}`}
-                            >
-                              {message.sender_type === 'user' && (
-                                <Avatar className="h-8 w-8">
-                                  <AvatarImage
-                                    src={
-                                      message.sender?.avatar_url || undefined
-                                    }
-                                  />
-                                  <AvatarFallback>
-                                    {message.sender?.name?.charAt(0) || 'U'}
-                                  </AvatarFallback>
-                                </Avatar>
-                              )}
-
-                              <div
-                                className={`max-w-[70%] ${
-                                  message.sender_type === 'agent'
-                                    ? 'bg-blue-500 text-white rounded-l-lg rounded-tr-lg'
-                                    : 'bg-gray-100 rounded-r-lg rounded-tl-lg'
-                                } p-3`}
-                              >
-                                <p className="text-sm">{message.content}</p>
-                                <div className="flex items-center justify-between mt-2">
-                                  <span className="text-xs opacity-70">
-                                    {new Date(
-                                      message.created_at
-                                    ).toLocaleTimeString()}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {message.sender_type === 'agent' && (
-                                <Avatar className="h-8 w-8">
-                                  <AvatarFallback>A</AvatarFallback>
-                                </Avatar>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </ScrollArea>
-
-                      {/* Message Input */}
-                      <div className="p-4 border-t bg-white">
-                        <div className="flex gap-2">
-                          <Textarea
-                            placeholder="Type your message..."
-                            value={newMessage}
-                            onChange={e => setNewMessage(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSendMessage();
-                              }
-                            }}
-                            className="flex-1 min-h-[60px] max-h-[120px]"
-                          />
-                          <div className="flex flex-col gap-2">
-                            <Button variant="outline" size="sm">
-                              <Paperclip className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              onClick={handleSendMessage}
-                              disabled={!newMessage.trim()}
-                            >
-                              <Send className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-8 text-center text-gray-500">
-                      Select a ticket to start chatting
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </div>
+                              {ticket.priority}
+                            </Badge>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="urgent">Urgent</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>{formatDate(ticket.created_at)}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleTicketSelect(ticket)}
+                        >
+                          View
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Analytics Tab */}
@@ -691,42 +643,28 @@ export default function SupportDashboard() {
             </Card>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Agent Performance</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Agent</TableHead>
-                    <TableHead>Assigned</TableHead>
-                    <TableHead>Resolved</TableHead>
-                    <TableHead>Avg Response</TableHead>
-                    <TableHead>Rating</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {mockStats.agentPerformance.map((agent, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium">
-                        {agent.agent_name}
-                      </TableCell>
-                      <TableCell>{agent.assigned_tickets}</TableCell>
-                      <TableCell>{agent.resolved_tickets}</TableCell>
-                      <TableCell>{agent.avg_response_time}m</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Star className="h-4 w-4 text-yellow-400" />
-                          {agent.satisfaction_rating}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+          {stats && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Agent Performance</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {stats.agentPerformance.map(agent => (
+                    <div key={agent.agent_id} className="border rounded p-3">
+                      <div className="font-medium">{agent.agent_name}</div>
+                      <div className="text-sm text-muted-foreground space-y-1">
+                        <div>Assigned: {agent.assigned_tickets}</div>
+                        <div>Resolved: {agent.resolved_tickets}</div>
+                        <div>Avg Response: {agent.avg_response_time}m</div>
+                        <div>Rating: {agent.satisfaction_rating}/5</div>
+                      </div>
+                    </div>
                   ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Knowledge Base Tab */}
@@ -746,23 +684,157 @@ export default function SupportDashboard() {
           </Card>
         </TabsContent>
 
-        {/* Agents Tab */}
         <TabsContent value="agents" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Support Agents
-              </CardTitle>
+              <CardTitle>Support Agents</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-gray-500">
-                Agent management features coming soon...
-              </p>
+              <div className="text-center py-8 text-muted-foreground">
+                Agent management coming soon...
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Ticket Details Dialog */}
+      <Dialog
+        open={!!selectedTicket}
+        onOpenChange={() => setSelectedTicket(null)}
+      >
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>
+              Ticket #{selectedTicket?.id} - {selectedTicket?.title}
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedTicket && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+              {/* Ticket Info */}
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-2">User Information</h4>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={selectedTicket.user?.avatar_url} />
+                      <AvatarFallback>
+                        {selectedTicket.user?.name?.charAt(0) || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <div className="font-medium">
+                        {selectedTicket.user?.name}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {selectedTicket.user?.email}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-medium mb-2">Ticket Details</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Status:</span>
+                      <Badge className={getStatusColor(selectedTicket.status)}>
+                        {selectedTicket.status}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Priority:</span>
+                      <Badge
+                        className={getPriorityColor(selectedTicket.priority)}
+                      >
+                        {selectedTicket.priority}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Created:</span>
+                      <span>{formatDate(selectedTicket.created_at)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Messages:</span>
+                      <span>{selectedTicket.messages_count}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="lg:col-span-2 flex flex-col h-full">
+                <div className="flex-1 overflow-hidden">
+                  <h4 className="font-medium mb-2">Conversation</h4>
+                  <ScrollArea className="h-96 border rounded p-4">
+                    {loadingMessages ? (
+                      <div className="flex items-center justify-center h-32">
+                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900"></div>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {ticketMessages.map(message => (
+                          <div
+                            key={message.id}
+                            className={`flex ${
+                              message.sender_type === 'agent'
+                                ? 'justify-end'
+                                : 'justify-start'
+                            }`}
+                          >
+                            <div
+                              className={`max-w-xs lg:max-w-md px-3 py-2 rounded-lg ${
+                                message.sender_type === 'agent'
+                                  ? 'bg-blue-500 text-white'
+                                  : 'bg-gray-200 text-gray-900'
+                              }`}
+                            >
+                              <div className="text-sm">{message.content}</div>
+                              <div
+                                className={`text-xs mt-1 ${
+                                  message.sender_type === 'agent'
+                                    ? 'text-blue-100'
+                                    : 'text-gray-500'
+                                }`}
+                              >
+                                {formatDate(message.created_at)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </div>
+
+                {/* Message Input */}
+                <div className="mt-4 space-y-2">
+                  <Textarea
+                    placeholder="Type your response..."
+                    value={newMessage}
+                    onChange={e => setNewMessage(e.target.value)}
+                    className="min-h-[80px]"
+                  />
+                  <div className="flex justify-between">
+                    <Button variant="outline" size="sm">
+                      <Paperclip className="h-4 w-4 mr-2" />
+                      Attach File
+                    </Button>
+                    <Button
+                      onClick={handleSendMessage}
+                      disabled={!newMessage.trim()}
+                    >
+                      <Send className="h-4 w-4 mr-2" />
+                      Send Message
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

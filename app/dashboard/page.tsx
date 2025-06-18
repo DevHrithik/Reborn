@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ComponentLoading } from '@/components/shared/loading';
 import { dashboardService } from '@/lib/data/dashboard';
+import { useToast } from '@/hooks/ui/use-toast';
 import {
   Users,
   Activity,
@@ -19,6 +20,11 @@ import {
   Star,
   Shield,
   RefreshCw,
+  Dumbbell,
+  BookOpen,
+  ChefHat,
+  AlertTriangle,
+  CheckCircle,
 } from 'lucide-react';
 
 interface DashboardMetrics {
@@ -28,6 +34,9 @@ interface DashboardMetrics {
   supportTickets: number;
   communityPosts: number;
   pendingModeration: number;
+  workoutSessions: number;
+  totalPlans: number;
+  totalRecipes: number;
   systemHealth: 'healthy' | 'warning' | 'critical';
   recentActivity: ActivityItem[];
 }
@@ -38,7 +47,8 @@ interface ActivityItem {
     | 'user_registration'
     | 'support_ticket'
     | 'community_post'
-    | 'system_event';
+    | 'system_event'
+    | 'workout_session';
   title: string;
   description: string;
   timestamp: string;
@@ -49,23 +59,50 @@ interface ActivityItem {
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const { toast } = useToast();
 
   useEffect(() => {
     loadDashboardData();
+
+    // Set up real-time updates
+    const unsubscribe = dashboardService.subscribeToUpdates(() => {
+      loadDashboardData();
+    });
+
+    // Auto-refresh every 5 minutes
+    const interval = setInterval(
+      () => {
+        loadDashboardData();
+      },
+      5 * 60 * 1000
+    );
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, []);
 
   const loadDashboardData = async () => {
     try {
+      setIsLoading(true);
       const data = await dashboardService.getDashboardMetrics();
       setMetrics(data);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error('Error loading dashboard data:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load dashboard data. Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (isLoading) {
+  if (isLoading && !metrics) {
     return <ComponentLoading />;
   }
 
@@ -73,6 +110,7 @@ export default function DashboardPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
+          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
           <p className="text-gray-600 mb-4">Failed to load dashboard data</p>
           <Button onClick={loadDashboardData}>
             <RefreshCw className="h-4 w-4 mr-2" />
@@ -94,7 +132,7 @@ export default function DashboardPage() {
       bgColor: 'bg-gradient-to-br from-blue-50 to-cyan-50',
     },
     {
-      title: 'Active Workouts',
+      title: 'Active Users',
       value: metrics.activeUsers.toLocaleString(),
       change: '+8%',
       changeType: 'positive' as const,
@@ -103,13 +141,22 @@ export default function DashboardPage() {
       bgColor: 'bg-gradient-to-br from-green-50 to-emerald-50',
     },
     {
+      title: 'Workout Sessions',
+      value: metrics.workoutSessions.toLocaleString(),
+      change: '+15%',
+      changeType: 'positive' as const,
+      icon: Dumbbell,
+      color: 'from-purple-500 to-pink-500',
+      bgColor: 'bg-gradient-to-br from-purple-50 to-pink-50',
+    },
+    {
       title: 'Community Posts',
       value: metrics.communityPosts.toLocaleString(),
       change: '+23%',
       changeType: 'positive' as const,
       icon: MessageSquare,
-      color: 'from-purple-500 to-pink-500',
-      bgColor: 'bg-gradient-to-br from-purple-50 to-pink-50',
+      color: 'from-indigo-500 to-purple-500',
+      bgColor: 'bg-gradient-to-br from-indigo-50 to-purple-50',
     },
     {
       title: 'Support Tickets',
@@ -120,10 +167,40 @@ export default function DashboardPage() {
       color: 'from-orange-500 to-red-500',
       bgColor: 'bg-gradient-to-br from-orange-50 to-red-50',
     },
+    {
+      title: 'Workout Plans',
+      value: metrics.totalPlans.toLocaleString(),
+      change: '+2%',
+      changeType: 'positive' as const,
+      icon: BookOpen,
+      color: 'from-teal-500 to-green-500',
+      bgColor: 'bg-gradient-to-br from-teal-50 to-green-50',
+    },
+    {
+      title: 'Recipes',
+      value: metrics.totalRecipes.toLocaleString(),
+      change: '+7%',
+      changeType: 'positive' as const,
+      icon: ChefHat,
+      color: 'from-yellow-500 to-orange-500',
+      bgColor: 'bg-gradient-to-br from-yellow-50 to-orange-50',
+    },
+    {
+      title: 'New Users Today',
+      value: metrics.newUsersToday.toLocaleString(),
+      change: metrics.newUsersToday > 0 ? '+100%' : '0%',
+      changeType:
+        metrics.newUsersToday > 0
+          ? ('positive' as const)
+          : ('neutral' as const),
+      icon: UserPlus,
+      color: 'from-rose-500 to-pink-500',
+      bgColor: 'bg-gradient-to-br from-rose-50 to-pink-50',
+    },
   ];
 
   const recentActivity = metrics.recentActivity.map((activity, index) => ({
-    id: index + 1,
+    id: activity.id,
     type: activity.type,
     message: `${activity.title}: ${activity.description}`,
     time: formatTimeAgo(activity.timestamp),
@@ -139,6 +216,8 @@ export default function DashboardPage() {
         return HelpCircle;
       case 'community_post':
         return MessageSquare;
+      case 'workout_session':
+        return Dumbbell;
       case 'system_event':
         return Shield;
       default:
@@ -179,6 +258,32 @@ export default function DashboardPage() {
     return `${Math.floor(diffInMinutes / 1440)} days ago`;
   }
 
+  const getSystemHealthColor = (health: string) => {
+    switch (health) {
+      case 'healthy':
+        return 'text-green-600 bg-green-100';
+      case 'warning':
+        return 'text-yellow-600 bg-yellow-100';
+      case 'critical':
+        return 'text-red-600 bg-red-100';
+      default:
+        return 'text-gray-600 bg-gray-100';
+    }
+  };
+
+  const getSystemHealthIcon = (health: string) => {
+    switch (health) {
+      case 'healthy':
+        return CheckCircle;
+      case 'warning':
+        return AlertTriangle;
+      case 'critical':
+        return AlertTriangle;
+      default:
+        return Shield;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
       <div className="p-6 space-y-8">
@@ -191,64 +296,83 @@ export default function DashboardPage() {
             <p className="text-lg text-gray-600">
               Welcome back! Here's what's happening with REBORN.
             </p>
+            <p className="text-sm text-gray-500">
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </p>
           </div>
           <div className="flex gap-3">
             <Button
               variant="outline"
               className="shadow-lg hover:shadow-xl transition-all duration-300"
               onClick={loadDashboardData}
+              disabled={isLoading}
             >
-              <Eye className="h-4 w-4 mr-2" />
-              View Reports
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`}
+              />
+              Refresh
             </Button>
-            <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-lg hover:shadow-xl transition-all duration-300">
-              <UserPlus className="h-4 w-4 mr-2" />
-              Add User
-            </Button>
+            <div className="flex items-center gap-2">
+              {(() => {
+                const HealthIcon = getSystemHealthIcon(metrics.systemHealth);
+                return (
+                  <Badge className={getSystemHealthColor(metrics.systemHealth)}>
+                    <HealthIcon className="h-3 w-3 mr-1" />
+                    System {metrics.systemHealth}
+                  </Badge>
+                );
+              })()}
+            </div>
           </div>
         </div>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {stats.map(stat => {
+          {stats.map((stat, index) => {
             const Icon = stat.icon;
-            const isPositive = stat.changeType === 'positive';
-
             return (
               <Card
-                key={stat.title}
-                className="relative overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 border-0"
+                key={index}
+                className={`${stat.bgColor} border-0 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1`}
               >
-                <div
-                  className={`absolute inset-0 ${stat.bgColor} opacity-50`}
-                ></div>
-                <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-gray-700">
-                    {stat.title}
-                  </CardTitle>
-                  <div
-                    className={`p-2 rounded-lg bg-gradient-to-r ${stat.color}`}
-                  >
-                    <Icon className="h-4 w-4 text-white" />
-                  </div>
-                </CardHeader>
-                <CardContent className="relative">
-                  <div className="text-3xl font-bold text-gray-900">
-                    {stat.value}
-                  </div>
-                  <div className="flex items-center mt-2">
-                    {isPositive ? (
-                      <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
-                    ) : (
-                      <TrendingDown className="h-4 w-4 text-red-500 mr-1" />
-                    )}
-                    <span
-                      className={`text-sm font-medium ${
-                        isPositive ? 'text-green-600' : 'text-red-600'
-                      }`}
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-gray-600">
+                        {stat.title}
+                      </p>
+                      <p className="text-3xl font-bold text-gray-900">
+                        {stat.value}
+                      </p>
+                      <div className="flex items-center space-x-1">
+                        {stat.changeType === 'positive' ? (
+                          <TrendingUp className="h-3 w-3 text-green-600" />
+                        ) : stat.changeType === 'negative' ? (
+                          <TrendingDown className="h-3 w-3 text-red-600" />
+                        ) : (
+                          <div className="h-3 w-3" />
+                        )}
+                        <span
+                          className={`text-xs font-medium ${
+                            stat.changeType === 'positive'
+                              ? 'text-green-600'
+                              : stat.changeType === 'negative'
+                                ? 'text-red-600'
+                                : 'text-gray-600'
+                          }`}
+                        >
+                          {stat.change}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          vs last month
+                        </span>
+                      </div>
+                    </div>
+                    <div
+                      className={`p-3 rounded-full bg-gradient-to-r ${stat.color} shadow-lg`}
                     >
-                      {stat.change} from last month
-                    </span>
+                      <Icon className="h-6 w-6 text-white" />
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -256,182 +380,160 @@ export default function DashboardPage() {
           })}
         </div>
 
-        {/* Two column layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Recent Activity and Quick Actions */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Recent Activity */}
-          <Card className="shadow-lg border-0 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-gray-50 to-blue-50 border-b">
-              <CardTitle className="text-xl text-gray-900">
-                Recent Activity
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              {recentActivity.map(activity => {
-                const Icon = activity.icon;
-                return (
-                  <div
-                    key={activity.id}
-                    className="flex items-center gap-4 p-4 bg-gradient-to-r from-white to-gray-50 rounded-xl border border-gray-100 hover:shadow-md transition-all duration-300"
-                  >
-                    <div
-                      className={`p-2 rounded-lg ${
-                        activity.status === 'success'
-                          ? 'bg-green-100 text-green-600'
-                          : activity.status === 'warning'
-                            ? 'bg-yellow-100 text-yellow-600'
-                            : 'bg-red-100 text-red-600'
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">
-                        {activity.message}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {activity.time}
-                      </p>
-                    </div>
-                    <Badge
-                      variant={
-                        activity.status === 'success'
-                          ? 'default'
-                          : activity.status === 'warning'
-                            ? 'secondary'
-                            : 'destructive'
-                      }
-                      className="capitalize"
-                    >
-                      {activity.status}
-                    </Badge>
-                  </div>
-                );
-              })}
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions */}
-          <Card className="shadow-lg border-0 overflow-hidden">
-            <CardHeader className="bg-gradient-to-r from-gray-50 to-indigo-50 border-b">
-              <CardTitle className="text-xl text-gray-900">
-                Quick Actions
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-6 space-y-4">
-              <Button className="w-full justify-start bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md hover:shadow-lg transition-all duration-300">
-                <Users className="h-5 w-5 mr-3" />
-                Manage Users
-              </Button>
-              <Button className="w-full justify-start bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white shadow-md hover:shadow-lg transition-all duration-300">
-                <MessageSquare className="h-5 w-5 mr-3" />
-                Review Community Posts
-              </Button>
-              <Button className="w-full justify-start bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white shadow-md hover:shadow-lg transition-all duration-300">
-                <HelpCircle className="h-5 w-5 mr-3" />
-                Handle Support Tickets
-              </Button>
-              <Button className="w-full justify-start bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-md hover:shadow-lg transition-all duration-300">
-                <Activity className="h-5 w-5 mr-3" />
-                Add New Workout
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* System Status */}
-        <Card className="shadow-lg border-0 overflow-hidden">
-          <CardHeader className="bg-gradient-to-r from-gray-50 to-green-50 border-b">
-            <CardTitle className="text-xl text-gray-900">
-              System Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
-                <div>
-                  <p className="text-sm font-semibold text-green-800">
-                    API Status
-                  </p>
-                  <p className="text-xs text-green-600">
-                    All systems operational
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse"></div>
-                  <Star className="h-4 w-4 text-green-500" />
-                </div>
-              </div>
-              <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
-                <div>
-                  <p className="text-sm font-semibold text-green-800">
-                    Database
-                  </p>
-                  <p className="text-xs text-green-600">Connected & Healthy</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 bg-green-500 rounded-full animate-pulse"></div>
-                  <Star className="h-4 w-4 text-green-500" />
-                </div>
-              </div>
-              <div
-                className={`flex items-center justify-between p-4 rounded-xl border shadow-sm ${
-                  metrics.systemHealth === 'healthy'
-                    ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
-                    : metrics.systemHealth === 'warning'
-                      ? 'bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200'
-                      : 'bg-gradient-to-r from-red-50 to-pink-50 border-red-200'
-                }`}
-              >
-                <div>
-                  <p
-                    className={`text-sm font-semibold ${
-                      metrics.systemHealth === 'healthy'
-                        ? 'text-green-800'
-                        : metrics.systemHealth === 'warning'
-                          ? 'text-yellow-800'
-                          : 'text-red-800'
-                    }`}
-                  >
-                    System Health
-                  </p>
-                  <p
-                    className={`text-xs ${
-                      metrics.systemHealth === 'healthy'
-                        ? 'text-green-600'
-                        : metrics.systemHealth === 'warning'
-                          ? 'text-yellow-600'
-                          : 'text-red-600'
-                    }`}
-                  >
-                    Status: {metrics.systemHealth}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`h-3 w-3 rounded-full animate-pulse ${
-                      metrics.systemHealth === 'healthy'
-                        ? 'bg-green-500'
-                        : metrics.systemHealth === 'warning'
-                          ? 'bg-yellow-500'
-                          : 'bg-red-500'
-                    }`}
-                  ></div>
-                  {metrics.systemHealth === 'healthy' ? (
-                    <Star className="h-4 w-4 text-green-500" />
+          <div className="lg:col-span-2">
+            <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Activity className="h-5 w-5 text-blue-600" />
+                  Recent Activity
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4 max-h-96 overflow-y-auto">
+                  {recentActivity.length > 0 ? (
+                    recentActivity.map(activity => {
+                      const ActivityIcon = activity.icon;
+                      return (
+                        <div
+                          key={activity.id}
+                          className="flex items-start space-x-4 p-4 rounded-lg bg-gray-50/50 hover:bg-gray-100/50 transition-colors"
+                        >
+                          <div
+                            className={`p-2 rounded-full ${
+                              activity.status === 'success'
+                                ? 'bg-green-100 text-green-600'
+                                : activity.status === 'warning'
+                                  ? 'bg-yellow-100 text-yellow-600'
+                                  : activity.status === 'error'
+                                    ? 'bg-red-100 text-red-600'
+                                    : 'bg-blue-100 text-blue-600'
+                            }`}
+                          >
+                            <ActivityIcon className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {activity.message}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {activity.time}
+                            </p>
+                          </div>
+                          <Badge
+                            variant={
+                              activity.status === 'success'
+                                ? 'default'
+                                : activity.status === 'warning'
+                                  ? 'secondary'
+                                  : activity.status === 'error'
+                                    ? 'destructive'
+                                    : 'outline'
+                            }
+                            className="text-xs"
+                          >
+                            {activity.status}
+                          </Badge>
+                        </div>
+                      );
+                    })
                   ) : (
-                    <TrendingUp
-                      className={`h-4 w-4 ${
-                        metrics.systemHealth === 'warning'
-                          ? 'text-yellow-500'
-                          : 'text-red-500'
-                      }`}
-                    />
+                    <div className="text-center py-8 text-gray-500">
+                      <Activity className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No recent activity</p>
+                    </div>
                   )}
                 </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Quick Actions & System Status */}
+          <div className="space-y-6">
+            {/* Quick Actions */}
+            <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Zap className="h-5 w-5 text-yellow-600" />
+                  Quick Actions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button
+                  className="w-full justify-start bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white shadow-lg"
+                  onClick={() => window.open('/users', '_blank')}
+                >
+                  <Users className="h-4 w-4 mr-2" />
+                  Manage Users
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start hover:bg-purple-50 border-purple-200"
+                  onClick={() => window.open('/community', '_blank')}
+                >
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Community Posts
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start hover:bg-orange-50 border-orange-200"
+                  onClick={() => window.open('/support', '_blank')}
+                >
+                  <HelpCircle className="h-4 w-4 mr-2" />
+                  Support Tickets
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start hover:bg-green-50 border-green-200"
+                  onClick={() => window.open('/workouts', '_blank')}
+                >
+                  <Dumbbell className="h-4 w-4 mr-2" />
+                  Workout Plans
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* System Status */}
+            <Card className="shadow-lg border-0 bg-white/70 backdrop-blur-sm">
+              <CardHeader className="pb-4">
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Shield className="h-5 w-5 text-green-600" />
+                  System Status
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Overall Health</span>
+                  <Badge className={getSystemHealthColor(metrics.systemHealth)}>
+                    {metrics.systemHealth}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Active Users</span>
+                  <span className="text-sm font-medium">
+                    {metrics.activeUsers}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">Open Tickets</span>
+                  <span className="text-sm font-medium">
+                    {metrics.supportTickets}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-600">
+                    Pending Moderation
+                  </span>
+                  <span className="text-sm font-medium">
+                    {metrics.pendingModeration}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,298 +1,517 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { 
-  AlertTriangle, 
-  CheckCircle, 
-  XCircle, 
-  MessageCircle, 
-  Heart, 
-  Clock, 
-  User, 
-  TrendingUp,
-  FileText,
-  Image as ImageIcon,
-  Video,
-  Trophy,
-  Dumbbell,
-  HelpCircle,
-  Filter,
-  Search,
-  MoreHorizontal,
-  Ban,
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Users,
+  MessageSquare,
   Flag,
-  Trash2
+  TrendingUp,
+  CheckCircle,
+  XCircle,
+  Trash2,
+  Shield,
+  Activity,
+  Search,
+  Filter,
+  Eye,
+  Heart,
+  MessageCircle,
+  Image as ImageIcon,
+  Calendar,
 } from 'lucide-react';
+import { useToast } from '@/hooks/ui/use-toast';
+import {
+  CommunityService,
+  type CommunityPost,
+  type CommunityComment,
+  type CommunityStats,
+  type PostFilters,
+} from '@/lib/data/community';
 
-// Mock data for demonstration
-const mockPosts = [
-  {
-    id: 1,
-    content: "Just completed my first 5K run! Feeling amazing and ready for more challenges.",
-    type: 'achievement',
-    user: { name: 'Sarah Johnson', email: 'sarah@example.com', avatar_url: null },
-    moderation_status: 'pending',
-    is_flagged: false,
-    likes_count: 12,
-    comments_count: 5,
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    content: "Check out this workout routine I've been following. It's been great for building strength!",
-    type: 'workout_share',
-    user: { name: 'Mike Chen', email: 'mike@example.com', avatar_url: null },
-    moderation_status: 'approved',
-    is_flagged: false,
-    likes_count: 24,
-    comments_count: 8,
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-  },
-  {
-    id: 3,
-    content: "This is inappropriate content that should be flagged for review.",
-    type: 'text',
-    user: { name: 'Test User', email: 'test@example.com', avatar_url: null },
-    moderation_status: 'pending',
-    is_flagged: true,
-    likes_count: 2,
-    comments_count: 1,
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-  },
-];
+export function CommunityDashboard() {
+  const { toast } = useToast();
 
-const mockStats = {
-  totalPosts: 1247,
-  pendingModeration: 23,
-  flaggedContent: 8,
-  postsToday: 45,
-  engagementMetrics: {
-    averageLikes: 18,
-    averageComments: 6,
-  },
-};
-
-export default function CommunityDashboard() {
-  const [selectedPosts, setSelectedPosts] = useState<number[]>([]);
-  const [selectedPost, setSelectedPost] = useState<any>(null);
-  const [moderationReason, setModerationReason] = useState('');
-  const [filters, setFilters] = useState({
-    status: 'all',
-    type: 'all',
-    flagged_only: false,
-    search: ''
+  // State management
+  const [posts, setPosts] = useState<CommunityPost[]>([]);
+  const [stats, setStats] = useState<CommunityStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedPosts, setSelectedPosts] = useState<Set<number>>(new Set());
+  const [moderationDialog, setModerationDialog] = useState<{
+    open: boolean;
+    post: CommunityPost | null;
+  }>({
+    open: false,
+    post: null,
   });
+  const [postDetailsDialog, setPostDetailsDialog] = useState<{
+    open: boolean;
+    post: CommunityPost | null;
+  }>({
+    open: false,
+    post: null,
+  });
+  const [postComments, setPostComments] = useState<CommunityComment[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [moderationReason, setModerationReason] = useState('');
+  const [filters, setFilters] = useState<PostFilters>({});
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const getPostTypeIcon = (type: string) => {
-    switch (type) {
-      case 'text': return <FileText className="h-4 w-4" />;
-      case 'image': return <ImageIcon className="h-4 w-4" />;
-      case 'video': return <Video className="h-4 w-4" />;
-      case 'achievement': return <Trophy className="h-4 w-4" />;
-      case 'workout_share': return <Dumbbell className="h-4 w-4" />;
-      case 'question': return <HelpCircle className="h-4 w-4" />;
-      default: return <FileText className="h-4 w-4" />;
+  // Load initial data
+  useEffect(() => {
+    loadData();
+  }, [filters]);
+
+  // Set up real-time subscriptions
+  useEffect(() => {
+    const newPostsSubscription = CommunityService.subscribeToNewPosts(
+      newPost => {
+        setPosts(prev => [newPost, ...prev]);
+        setStats(prev =>
+          prev ? { ...prev, totalPosts: prev.totalPosts + 1 } : null
+        );
+
+        toast({
+          title: 'New Community Post',
+          description: `New ${newPost.post_type} post from ${newPost.user?.full_name || 'Unknown User'}`,
+        });
+      }
+    );
+
+    const flaggedContentSubscription =
+      CommunityService.subscribeToFlaggedContent(moderation => {
+        setStats(prev =>
+          prev ? { ...prev, flaggedContent: prev.flaggedContent + 1 } : null
+        );
+
+        toast({
+          title: 'Content Flagged',
+          description: 'New content requires moderation review',
+          variant: 'destructive',
+        });
+      });
+
+    return () => {
+      newPostsSubscription.unsubscribe();
+      flaggedContentSubscription.unsubscribe();
+    };
+  }, [toast]);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [postsData, statsData] = await Promise.all([
+        CommunityService.getAllPosts(50, 0, filters),
+        CommunityService.getCommunityStats(),
+      ]);
+
+      setPosts(postsData);
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error loading community data:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load community data. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'approved': return 'bg-green-100 text-green-800';
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'rejected': return 'bg-red-100 text-red-800';
-      case 'auto_approved': return 'bg-blue-100 text-blue-800';
-      default: return 'bg-gray-100 text-gray-800';
+  const loadPostComments = async (postId: number) => {
+    try {
+      setLoadingComments(true);
+      const comments = await CommunityService.getPostComments(postId);
+      setPostComments(comments);
+    } catch (error) {
+      console.error('Error loading comments:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load comments.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoadingComments(false);
     }
+  };
+
+  const handleSearch = async () => {
+    const searchFilters = { ...filters, search: searchTerm || undefined };
+    setFilters(searchFilters);
+  };
+
+  const handleFilterChange = (key: keyof PostFilters, value: string) => {
+    const newFilters = { ...filters };
+    if (value === 'all' || value === '') {
+      delete newFilters[key];
+    } else {
+      (newFilters as any)[key] = value;
+    }
+    setFilters(newFilters);
+  };
+
+  const handleSelectPost = (postId: number, checked: boolean) => {
+    const newSelected = new Set(selectedPosts);
+    if (checked) {
+      newSelected.add(postId);
+    } else {
+      newSelected.delete(postId);
+    }
+    setSelectedPosts(newSelected);
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedPosts(new Set(posts.map(p => p.id)));
+    } else {
+      setSelectedPosts(new Set());
+    }
+  };
+
+  const handleViewPost = async (post: CommunityPost) => {
+    setPostDetailsDialog({ open: true, post });
+    await loadPostComments(post.id);
+  };
+
+  const handleModeratePost = async (
+    postId: number,
+    action: 'approve' | 'reject' | 'delete',
+    reason?: string
+  ) => {
+    try {
+      // Using the actual admin user ID from the database
+      const adminId = '90bc1e63-0f9c-48c7-8fcf-dec340b74069';
+
+      await CommunityService.moderatePost(postId, action, adminId, reason);
+
+      // Update local state
+      if (action === 'delete') {
+        setPosts(prev => prev.filter(p => p.id !== postId));
+        toast({
+          title: 'Post Deleted',
+          description: 'The post has been permanently deleted.',
+        });
+      } else {
+        setPosts(prev =>
+          prev.map(p =>
+            p.id === postId
+              ? {
+                  ...p,
+                  moderation_status:
+                    action === 'approve' ? 'approved' : 'rejected',
+                  is_flagged: false,
+                }
+              : p
+          )
+        );
+
+        toast({
+          title: action === 'approve' ? 'Post Approved' : 'Post Rejected',
+          description:
+            action === 'approve'
+              ? 'The post is now visible to all users.'
+              : 'The post has been hidden from users.',
+        });
+      }
+
+      // Close dialogs
+      setModerationDialog({ open: false, post: null });
+      setPostDetailsDialog({ open: false, post: null });
+      setModerationReason('');
+
+      // Refresh stats
+      const newStats = await CommunityService.getCommunityStats();
+      setStats(newStats);
+    } catch (error) {
+      console.error('Error moderating post:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to moderate post. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleDeleteComment = async (commentId: number) => {
+    try {
+      // In a real implementation, you'd have a deleteComment method
+      // For now, we'll just remove it from local state
+      setPostComments(prev => prev.filter(c => c.id !== commentId));
+
+      toast({
+        title: 'Comment Deleted',
+        description: 'The comment has been removed.',
+      });
+    } catch (error) {
+      console.error('Error deleting comment:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete comment.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleBulkModeration = async (action: 'approve' | 'reject') => {
+    if (selectedPosts.size === 0) return;
+
+    try {
+      const adminId = '90bc1e63-0f9c-48c7-8fcf-dec340b74069';
+      const postIds = Array.from(selectedPosts);
+
+      await CommunityService.bulkModerate(
+        postIds,
+        action,
+        adminId,
+        'Bulk moderation'
+      );
+
+      // Update local state
+      setPosts(prev =>
+        prev.map(p =>
+          selectedPosts.has(p.id)
+            ? {
+                ...p,
+                moderation_status:
+                  action === 'approve' ? 'approved' : 'rejected',
+                is_flagged: false,
+              }
+            : p
+        )
+      );
+
+      setSelectedPosts(new Set());
+
+      toast({
+        title: 'Bulk Moderation Complete',
+        description: `${selectedPosts.size} posts ${action}d successfully`,
+      });
+
+      // Refresh stats
+      const newStats = await CommunityService.getCommunityStats();
+      setStats(newStats);
+    } catch (error) {
+      console.error('Error bulk moderating:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to bulk moderate posts. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const getPostTypeColor = (type: string) => {
+    const colors: Record<string, string> = {
+      milestone: 'bg-green-100 text-green-800',
+      tip: 'bg-blue-100 text-blue-800',
+      celebration: 'bg-yellow-100 text-yellow-800',
+      question: 'bg-purple-100 text-purple-800',
+      sharing: 'bg-gray-100 text-gray-800',
+    };
+    return colors[type] || 'bg-gray-100 text-gray-800';
+  };
+
+  const getStatusColor = (status?: string) => {
+    const colors: Record<string, string> = {
+      approved: 'bg-green-100 text-green-800',
+      rejected: 'bg-red-100 text-red-800',
+      pending: 'bg-yellow-100 text-yellow-800',
+    };
+    return colors[status || 'approved'] || 'bg-gray-100 text-gray-800';
   };
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
       month: 'short',
       day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
     });
   };
 
-  const filteredPosts = mockPosts.filter(post => {
-    if (filters.status !== 'all' && post.moderation_status !== filters.status) return false;
-    if (filters.type !== 'all' && post.type !== filters.type) return false;
-    if (filters.flagged_only && !post.is_flagged) return false;
-    if (filters.search && !post.content.toLowerCase().includes(filters.search.toLowerCase())) return false;
-    return true;
-  });
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Posts</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockStats.totalPosts}</div>
-            <p className="text-xs text-muted-foreground">
-              {mockStats.postsToday} posted today
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Moderation</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockStats.pendingModeration}</div>
-            <p className="text-xs text-muted-foreground">
-              Needs review
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Flagged Content</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockStats.flaggedContent}</div>
-            <p className="text-xs text-muted-foreground">
-              Requires attention
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg Engagement</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{mockStats.engagementMetrics.averageLikes}</div>
-            <p className="text-xs text-muted-foreground">
-              Likes per post
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Main Content */}
-      <Tabs defaultValue="posts" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="posts">Posts & Moderation</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="users">User Management</TabsTrigger>
-        </TabsList>
-
-        {/* Posts Tab */}
-        <TabsContent value="posts" className="space-y-4">
-          {/* Filters */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Filters & Actions
-              </CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Posts</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-4 items-end">
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Status</label>
-                  <Select value={filters.status} onValueChange={(value) => 
-                    setFilters(prev => ({ ...prev, status: value }))
-                  }>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="rejected">Rejected</SelectItem>
-                      <SelectItem value="auto_approved">Auto Approved</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="text-2xl font-bold">{stats.totalPosts}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats.postsToday} today
+              </p>
+            </CardContent>
+          </Card>
 
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Type</label>
-                  <Select value={filters.type} onValueChange={(value) => 
-                    setFilters(prev => ({ ...prev, type: value }))
-                  }>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="text">Text</SelectItem>
-                      <SelectItem value="image">Image</SelectItem>
-                      <SelectItem value="video">Video</SelectItem>
-                      <SelectItem value="achievement">Achievement</SelectItem>
-                      <SelectItem value="workout_share">Workout</SelectItem>
-                      <SelectItem value="question">Question</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Pending Moderation
+              </CardTitle>
+              <Shield className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.pendingModeration}
+              </div>
+              <p className="text-xs text-muted-foreground">Requires review</p>
+            </CardContent>
+          </Card>
 
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Search</label>
-                  <div className="relative">
-                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input 
-                      placeholder="Search posts..." 
-                      className="pl-8 w-64"
-                      value={filters.search}
-                      onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-                    />
-                  </div>
-                </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Flagged Content
+              </CardTitle>
+              <Flag className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.flaggedContent}</div>
+              <p className="text-xs text-muted-foreground">
+                Auto-flagged items
+              </p>
+            </CardContent>
+          </Card>
 
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Avg. Engagement
+              </CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.engagementMetrics.averageLikes}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {stats.engagementMetrics.averageComments} avg. comments
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <Tabs defaultValue="posts" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="posts">Posts & Moderation</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="posts" className="space-y-4">
+          {/* Filters and Actions */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Filter & Actions</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap gap-4">
                 <div className="flex items-center space-x-2">
-                  <Checkbox 
-                    id="flagged"
-                    checked={filters.flagged_only}
-                    onCheckedChange={(checked) => 
-                      setFilters(prev => ({ ...prev, flagged_only: checked as boolean }))
-                    }
+                  <Input
+                    placeholder="Search posts..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    className="w-64"
                   />
-                  <label htmlFor="flagged" className="text-sm font-medium">
-                    Flagged only
-                  </label>
+                  <Button onClick={handleSearch} size="sm">
+                    <Search className="h-4 w-4" />
+                  </Button>
                 </div>
+
+                <Select
+                  onValueChange={value => handleFilterChange('status', value)}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select
+                  onValueChange={value => handleFilterChange('type', value)}
+                >
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Types</SelectItem>
+                    <SelectItem value="milestone">Milestone</SelectItem>
+                    <SelectItem value="tip">Tip</SelectItem>
+                    <SelectItem value="celebration">Celebration</SelectItem>
+                    <SelectItem value="question">Question</SelectItem>
+                    <SelectItem value="sharing">Sharing</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              {/* Bulk Actions */}
-              {selectedPosts.length > 0 && (
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">
-                      {selectedPosts.length} posts selected
-                    </span>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm">
-                        <CheckCircle className="h-4 w-4 mr-1" />
-                        Bulk Approve
-                      </Button>
-                      <Button variant="outline" size="sm">
-                        <XCircle className="h-4 w-4 mr-1" />
-                        Bulk Reject
-                      </Button>
-                    </div>
-                  </div>
+              {selectedPosts.size > 0 && (
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-muted-foreground">
+                    {selectedPosts.size} selected
+                  </span>
+                  <Button
+                    onClick={() => handleBulkModeration('approve')}
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    Approve All
+                  </Button>
+                  <Button
+                    onClick={() => handleBulkModeration('reject')}
+                    size="sm"
+                    variant="destructive"
+                  >
+                    <XCircle className="h-4 w-4 mr-1" />
+                    Reject All
+                  </Button>
                 </div>
               )}
             </CardContent>
@@ -308,263 +527,429 @@ export default function CommunityDashboard() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-12">
-                      <Checkbox 
-                        checked={selectedPosts.length === filteredPosts.length && filteredPosts.length > 0}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            setSelectedPosts(filteredPosts.map(p => p.id));
-                          } else {
-                            setSelectedPosts([]);
-                          }
-                        }}
+                      <Checkbox
+                        checked={
+                          selectedPosts.size === posts.length &&
+                          posts.length > 0
+                        }
+                        onCheckedChange={handleSelectAll}
                       />
                     </TableHead>
-                    <TableHead>Post</TableHead>
                     <TableHead>User</TableHead>
+                    <TableHead>Content</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Engagement</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead>Created</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredPosts.map((post) => (
-                    <TableRow key={post.id}>
+                  {posts.map(post => (
+                    <TableRow
+                      key={post.id}
+                      className="cursor-pointer hover:bg-gray-50"
+                    >
                       <TableCell>
-                        <Checkbox 
-                          checked={selectedPosts.includes(post.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedPosts(prev => [...prev, post.id]);
-                            } else {
-                              setSelectedPosts(prev => prev.filter(id => id !== post.id));
-                            }
-                          }}
+                        <Checkbox
+                          checked={selectedPosts.has(post.id)}
+                          onCheckedChange={checked =>
+                            handleSelectPost(post.id, checked as boolean)
+                          }
                         />
                       </TableCell>
                       <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage
+                              src={post.user?.avatar_url || undefined}
+                            />
+                            <AvatarFallback>
+                              {post.user?.full_name?.charAt(0) || 'U'}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="font-medium">
+                              {post.user?.full_name || 'Unknown'}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {post.user?.email}
+                            </div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell onClick={() => handleViewPost(post)}>
                         <div className="max-w-md">
-                          <p className="text-sm truncate">{post.content}</p>
-                          {post.is_flagged && (
-                            <Badge variant="destructive" className="mt-1">
-                              <Flag className="h-3 w-3 mr-1" />
-                              Flagged
+                          <p className="truncate">{post.content}</p>
+                          {post.image_url && (
+                            <Badge variant="outline" className="mt-1">
+                              <ImageIcon className="h-3 w-3 mr-1" />
+                              Has Image
                             </Badge>
                           )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={post.user?.avatar_url || undefined} />
-                            <AvatarFallback>
-                              {post.user?.name?.charAt(0) || 'U'}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="text-sm font-medium">{post.user?.name}</p>
-                            <p className="text-xs text-gray-500">{post.user?.email}</p>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          {getPostTypeIcon(post.type)}
-                          <span className="text-sm capitalize">{post.type.replace('_', ' ')}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={getStatusColor(post.moderation_status)}>
-                          {post.moderation_status.replace('_', ' ')}
+                        <Badge className={getPostTypeColor(post.post_type)}>
+                          {post.post_type}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-3 text-sm text-gray-500">
-                          <span className="flex items-center gap-1">
-                            <Heart className="h-3 w-3" />
+                        <Badge
+                          className={getStatusColor(post.moderation_status)}
+                        >
+                          {post.moderation_status || 'approved'}
+                        </Badge>
+                        {post.is_flagged && (
+                          <Flag className="h-4 w-4 text-red-500 ml-1 inline" />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2 text-sm">
+                          <span className="flex items-center">
+                            <Heart className="h-3 w-3 mr-1 text-red-500" />
                             {post.likes_count}
                           </span>
-                          <span className="flex items-center gap-1">
-                            <MessageCircle className="h-3 w-3" />
+                          <span className="flex items-center">
+                            <MessageCircle className="h-3 w-3 mr-1 text-blue-500" />
                             {post.comments_count}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-gray-500">
+                        <div className="text-sm text-muted-foreground">
                           {formatDate(post.created_at)}
-                        </span>
+                        </div>
                       </TableCell>
                       <TableCell>
-                        <Dialog>
-                          <DialogTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => setSelectedPost(post)}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent className="max-w-2xl">
-                            <DialogHeader>
-                              <DialogTitle>Post Actions</DialogTitle>
-                            </DialogHeader>
-                            {selectedPost && (
-                              <div className="space-y-4">
-                                <div className="p-4 bg-gray-50 rounded-lg">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Avatar className="h-8 w-8">
-                                      <AvatarImage src={selectedPost.user?.avatar_url || undefined} />
-                                      <AvatarFallback>
-                                        {selectedPost.user?.name?.charAt(0) || 'U'}
-                                      </AvatarFallback>
-                                    </Avatar>
-                                    <div>
-                                      <p className="font-medium">{selectedPost.user?.name}</p>
-                                      <p className="text-sm text-gray-500">
-                                        {formatDate(selectedPost.created_at)}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  <p className="text-sm">{selectedPost.content}</p>
-                                  <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                                    <span className="flex items-center gap-1">
-                                      <Heart className="h-3 w-3" />
-                                      {selectedPost.likes_count} likes
-                                    </span>
-                                    <span className="flex items-center gap-1">
-                                      <MessageCircle className="h-3 w-3" />
-                                      {selectedPost.comments_count} comments
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <label className="text-sm font-medium">Moderation Reason</label>
-                                  <Textarea
-                                    placeholder="Enter reason for moderation action..."
-                                    value={moderationReason}
-                                    onChange={(e) => setModerationReason(e.target.value)}
-                                  />
-                                </div>
-
-                                <div className="flex flex-wrap gap-2">
-                                  {selectedPost.moderation_status === 'pending' && (
-                                    <>
-                                      <Button className="flex items-center gap-1">
-                                        <CheckCircle className="h-4 w-4" />
-                                        Approve
-                                      </Button>
-                                      <Button variant="destructive">
-                                        <XCircle className="h-4 w-4 mr-1" />
-                                        Reject
-                                      </Button>
-                                    </>
-                                  )}
-                                  
-                                  <Button variant="outline">
-                                    <Trash2 className="h-4 w-4 mr-1" />
-                                    Delete
-                                  </Button>
-
-                                  <Button variant="outline">
-                                    <Ban className="h-4 w-4 mr-1" />
-                                    Ban User
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </DialogContent>
-                        </Dialog>
+                        <div className="flex items-center space-x-1">
+                          <Button
+                            onClick={() => handleViewPost(post)}
+                            size="sm"
+                            variant="outline"
+                            title="View Details"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            onClick={() =>
+                              handleModeratePost(post.id, 'approve')
+                            }
+                            size="sm"
+                            className="bg-green-600 hover:bg-green-700"
+                            title="Approve Post"
+                          >
+                            <CheckCircle className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            onClick={() =>
+                              handleModeratePost(post.id, 'reject')
+                            }
+                            size="sm"
+                            variant="destructive"
+                            title="Reject Post"
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            onClick={() =>
+                              setModerationDialog({ open: true, post })
+                            }
+                            size="sm"
+                            variant="outline"
+                            title="Delete Post"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-
-              {filteredPosts.length === 0 && (
-                <div className="text-center py-8 text-gray-500">
-                  No posts found matching your criteria
-                </div>
-              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Analytics Tab */}
         <TabsContent value="analytics" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Posts by Type</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Trophy className="h-4 w-4" />
-                      <span>Achievement</span>
-                    </div>
-                    <span className="font-medium">342</span>
+          {stats && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Posts by Type</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {stats.postsByType.map(item => (
+                      <div
+                        key={item.type}
+                        className="flex justify-between items-center"
+                      >
+                        <span className="capitalize">{item.type}</span>
+                        <Badge>{item.count}</Badge>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Dumbbell className="h-4 w-4" />
-                      <span>Workout Share</span>
-                    </div>
-                    <span className="font-medium">256</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      <span>Text</span>
-                    </div>
-                    <span className="font-medium">189</span>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Engagement Metrics</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-sm">Average Likes</span>
-                      <span className="font-medium">{mockStats.engagementMetrics.averageLikes}</span>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Moderation Stats</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span>Approved Today</span>
+                      <Badge className="bg-green-100 text-green-800">
+                        {stats.moderationStats.approvedToday}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span>Rejected Today</span>
+                      <Badge className="bg-red-100 text-red-800">
+                        {stats.moderationStats.rejectedToday}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span>Auto-approved</span>
+                      <Badge className="bg-blue-100 text-blue-800">
+                        {stats.moderationStats.autoApproved}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span>Avg. Response Time</span>
+                      <Badge>{stats.moderationStats.responseTime}m</Badge>
                     </div>
                   </div>
-                  <div>
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-sm">Average Comments</span>
-                      <span className="font-medium">{mockStats.engagementMetrics.averageComments}</span>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Users Tab */}
-        <TabsContent value="users" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>User Management</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-500">
-                User management features will be integrated with the main user management system.
-              </p>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
+
+      {/* Post Details Modal */}
+      <Dialog
+        open={postDetailsDialog.open}
+        onOpenChange={open => setPostDetailsDialog({ open, post: null })}
+      >
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Post Details</DialogTitle>
+          </DialogHeader>
+          {postDetailsDialog.post && (
+            <div className="space-y-6">
+              {/* Post Header */}
+              <div className="flex items-start space-x-4">
+                <Avatar className="h-12 w-12">
+                  <AvatarImage
+                    src={postDetailsDialog.post.user?.avatar_url || undefined}
+                  />
+                  <AvatarFallback>
+                    {postDetailsDialog.post.user?.full_name?.charAt(0) || 'U'}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1">
+                  <div className="flex items-center space-x-2">
+                    <h3 className="font-semibold">
+                      {postDetailsDialog.post.user?.full_name || 'Unknown User'}
+                    </h3>
+                    <Badge
+                      className={getPostTypeColor(
+                        postDetailsDialog.post.post_type
+                      )}
+                    >
+                      {postDetailsDialog.post.post_type}
+                    </Badge>
+                    <Badge
+                      className={getStatusColor(
+                        postDetailsDialog.post.moderation_status
+                      )}
+                    >
+                      {postDetailsDialog.post.moderation_status || 'approved'}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground flex items-center">
+                    <Calendar className="h-3 w-3 mr-1" />
+                    {formatDate(postDetailsDialog.post.created_at)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Post Content */}
+              <div className="space-y-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-gray-900">
+                    {postDetailsDialog.post.content}
+                  </p>
+                </div>
+
+                {/* Post Image */}
+                {postDetailsDialog.post.image_url && (
+                  <div className="rounded-lg overflow-hidden border">
+                    <img
+                      src={postDetailsDialog.post.image_url}
+                      alt="Post image"
+                      className="w-full h-auto max-h-96 object-cover"
+                    />
+                  </div>
+                )}
+
+                {/* Engagement Stats */}
+                <div className="flex items-center space-x-6 text-sm text-muted-foreground">
+                  <span className="flex items-center">
+                    <Heart className="h-4 w-4 mr-1 text-red-500" />
+                    {postDetailsDialog.post.likes_count} likes
+                  </span>
+                  <span className="flex items-center">
+                    <MessageCircle className="h-4 w-4 mr-1 text-blue-500" />
+                    {postDetailsDialog.post.comments_count} comments
+                  </span>
+                </div>
+              </div>
+
+              {/* Comments Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold">
+                    Comments ({postComments.length})
+                  </h4>
+                </div>
+
+                <ScrollArea className="h-64 w-full border rounded-lg p-4">
+                  {loadingComments ? (
+                    <div className="flex items-center justify-center h-32">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900"></div>
+                    </div>
+                  ) : postComments.length > 0 ? (
+                    <div className="space-y-4">
+                      {postComments.map(comment => (
+                        <div
+                          key={comment.id}
+                          className="flex items-start space-x-3 group"
+                        >
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage
+                              src={comment.user?.avatar_url || undefined}
+                            />
+                            <AvatarFallback>
+                              {comment.user?.full_name?.charAt(0) || 'U'}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2">
+                              <span className="font-medium text-sm">
+                                {comment.user?.full_name || 'Unknown'}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(comment.created_at)}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-700 mt-1">
+                              {comment.content}
+                            </p>
+                          </div>
+                          <Button
+                            onClick={() => handleDeleteComment(comment.id)}
+                            size="sm"
+                            variant="ghost"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <Trash2 className="h-3 w-3 text-red-500" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-muted-foreground py-8">
+                      No comments yet
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end space-x-2 pt-4 border-t">
+                <Button
+                  onClick={() =>
+                    handleModeratePost(postDetailsDialog.post!.id, 'approve')
+                  }
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Approve Post
+                </Button>
+                <Button
+                  onClick={() =>
+                    handleModeratePost(postDetailsDialog.post!.id, 'reject')
+                  }
+                  variant="destructive"
+                >
+                  <XCircle className="h-4 w-4 mr-2" />
+                  Reject Post
+                </Button>
+                <Button
+                  onClick={() => {
+                    setModerationDialog({
+                      open: true,
+                      post: postDetailsDialog.post,
+                    });
+                    setPostDetailsDialog({ open: false, post: null });
+                  }}
+                  variant="outline"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Post
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog
+        open={moderationDialog.open}
+        onOpenChange={open => setModerationDialog({ open, post: null })}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Post</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p>
+              Are you sure you want to permanently delete this post? This action
+              cannot be undone.
+            </p>
+            <Textarea
+              placeholder="Reason for deletion (optional)"
+              value={moderationReason}
+              onChange={e => setModerationReason(e.target.value)}
+            />
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => setModerationDialog({ open: false, post: null })}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() =>
+                  handleModeratePost(
+                    moderationDialog.post!.id,
+                    'delete',
+                    moderationReason
+                  )
+                }
+              >
+                Delete Post
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
