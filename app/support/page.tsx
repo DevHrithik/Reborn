@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import SupportDashboard from '@/components/support/support-dashboard';
 
 export default function SupportPage() {
   return (
@@ -10,16 +10,7 @@ export default function SupportPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Support Overview</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-gray-500">
-            Support management features coming soon...
-          </p>
-        </CardContent>
-      </Card>
+      <SupportDashboard />
     </div>
   );
 }

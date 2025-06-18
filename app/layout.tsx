@@ -4,6 +4,7 @@ import './globals.css';
 import { AuthProvider } from '@/components/providers/auth-provider';
 import { ErrorBoundary } from '@/components/shared/error-boundary';
 import { ProtectedLayout } from '@/components/layout/protected-layout';
+import { Toaster } from '@/components/ui/toaster';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -27,6 +28,7 @@ export default function RootLayout({
             <ProtectedLayout>{children}</ProtectedLayout>
           </AuthProvider>
         </ErrorBoundary>
+        <Toaster />
       </body>
     </html>
   );

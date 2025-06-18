@@ -68,9 +68,16 @@ export function WorkoutDayDetails({
     useState(false);
   const [isEditSectionDialogOpen, setIsEditSectionDialogOpen] = useState(false);
   const [isAddExerciseDialogOpen, setIsAddExerciseDialogOpen] = useState(false);
+  const [isEditExerciseDialogOpen, setIsEditExerciseDialogOpen] =
+    useState(false);
+  const [isExercisePreviewOpen, setIsExercisePreviewOpen] = useState(false);
   const [editingSection, setEditingSection] = useState<DaySection | null>(null);
   const [selectedSectionForExercise, setSelectedSectionForExercise] =
     useState<DaySection | null>(null);
+  const [editingExercise, setEditingExercise] =
+    useState<SectionExercise | null>(null);
+  const [previewExercise, setPreviewExercise] =
+    useState<SectionExercise | null>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
     new Set()
   );
@@ -162,17 +169,27 @@ export function WorkoutDayDetails({
     if (!selectedSectionForExercise) return;
 
     try {
-      await WorkoutService.createSectionExercise({
+      console.log('Adding exercise with data:', exerciseData);
+      console.log('Selected section:', selectedSectionForExercise);
+
+      const exerciseToCreate = {
         ...exerciseData,
         day_section_id: selectedSectionForExercise.id,
-      });
+      };
+
+      console.log('Final exercise data to create:', exerciseToCreate);
+
+      await WorkoutService.createSectionExercise(exerciseToCreate);
       toast.success('Exercise added successfully');
       loadSections();
       setIsAddExerciseDialogOpen(false);
       setSelectedSectionForExercise(null);
     } catch (error) {
       console.error('Error adding exercise:', error);
-      toast.error('Failed to add exercise');
+      console.error('Error details:', JSON.stringify(error, null, 2));
+      toast.error(
+        `Failed to add exercise: ${error?.message || 'Unknown error'}`
+      );
     }
   };
 
@@ -188,6 +205,49 @@ export function WorkoutDayDetails({
     } catch (error) {
       console.error('Error removing exercise:', error);
       toast.error('Failed to remove exercise');
+    }
+  };
+
+  const handleEditExercise = (exercise: SectionExercise) => {
+    setEditingExercise(exercise);
+    setIsEditExerciseDialogOpen(true);
+  };
+
+  const handlePreviewExercise = (exercise: SectionExercise) => {
+    // Find alternatives for this exercise
+    const alternatives =
+      sectionExercises[exercise.day_section_id]?.filter(
+        alt => alt.parent_section_exercise_id === exercise.id
+      ) || [];
+
+    // Attach alternatives to the exercise for preview
+    const exerciseWithAlternatives = {
+      ...exercise,
+      alternatives: alternatives,
+    };
+
+    setPreviewExercise(exerciseWithAlternatives);
+    setIsExercisePreviewOpen(true);
+  };
+
+  const handleUpdateExercise = async (
+    exerciseData: Omit<SectionExercise, 'id' | 'created_at'>
+  ) => {
+    if (!editingExercise) return;
+
+    try {
+      const updatedExercise = await WorkoutService.updateSectionExercise(
+        editingExercise.id,
+        exerciseData
+      );
+
+      toast.success('Exercise updated successfully');
+      setIsEditExerciseDialogOpen(false);
+      setEditingExercise(null);
+      loadSections(); // Reload to get fresh data
+    } catch (error) {
+      console.error('Error updating exercise:', error);
+      toast.error('Failed to update exercise');
     }
   };
 
@@ -403,7 +463,9 @@ export function WorkoutDayDetails({
                                     variant="secondary"
                                     className="bg-gray-100 text-gray-700"
                                   >
-                                    {sectionExercises[section.id]?.length || 0}{' '}
+                                    {sectionExercises[section.id]?.filter(
+                                      ex => !ex.parent_section_exercise_id
+                                    )?.length || 0}{' '}
                                     exercises
                                   </Badge>
                                 </div>
@@ -465,67 +527,190 @@ export function WorkoutDayDetails({
                           {sectionExercises[section.id] &&
                           sectionExercises[section.id].length > 0 ? (
                             <div className="space-y-3">
-                              {sectionExercises[section.id].map(
-                                (exercise, index) => (
-                                  <div
-                                    key={exercise.id}
-                                    className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border"
-                                  >
-                                    <div className="flex items-center gap-4 flex-1">
-                                      <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-full text-sm font-semibold text-blue-600">
-                                        {index + 1}
-                                      </div>
-                                      <div className="flex-1">
-                                        <h4 className="font-medium text-gray-900">
-                                          {exercise.exercise?.name ||
-                                            'Unknown Exercise'}
-                                        </h4>
-                                        <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
-                                          {exercise.sets && (
-                                            <span className="flex items-center gap-1">
-                                              <strong>Sets:</strong>{' '}
-                                              {exercise.sets}
-                                            </span>
-                                          )}
-                                          {exercise.reps && (
-                                            <span className="flex items-center gap-1">
-                                              <strong>Reps:</strong>{' '}
-                                              {exercise.reps}
-                                            </span>
-                                          )}
-                                          {exercise.duration && (
-                                            <span className="flex items-center gap-1">
-                                              <Clock className="h-3 w-3" />
-                                              {exercise.duration}
-                                            </span>
-                                          )}
-                                          {exercise.weight && (
-                                            <span className="flex items-center gap-1">
-                                              <strong>Weight:</strong>{' '}
-                                              {exercise.weight}
-                                            </span>
-                                          )}
-                                        </div>
-                                        {exercise.notes && (
-                                          <p className="text-sm text-gray-600 mt-1 italic">
-                                            {exercise.notes}
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() =>
-                                        handleDeleteExercise(exercise)
-                                      }
-                                      className="text-red-500 hover:text-red-700"
+                              {sectionExercises[section.id]
+                                .filter(
+                                  exercise =>
+                                    !exercise.parent_section_exercise_id
+                                ) // Only main exercises
+                                .map((exercise, index) => {
+                                  // Find alternatives for this main exercise
+                                  const alternatives = sectionExercises[
+                                    section.id
+                                  ].filter(
+                                    alt =>
+                                      alt.parent_section_exercise_id ===
+                                      exercise.id
+                                  );
+
+                                  return (
+                                    <div
+                                      key={exercise.id}
+                                      className="space-y-2"
                                     >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                )
-                              )}
+                                      {/* Main Exercise */}
+                                      <div
+                                        className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors cursor-pointer"
+                                        onClick={() =>
+                                          handlePreviewExercise(exercise)
+                                        }
+                                      >
+                                        <div className="flex items-center gap-4 flex-1">
+                                          <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-full text-sm font-semibold text-blue-600">
+                                            {index + 1}
+                                          </div>
+                                          <div className="flex-1">
+                                            <h4 className="font-medium text-gray-900">
+                                              {exercise.exercise?.name ||
+                                                'Unknown Exercise'}
+                                            </h4>
+                                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                                              {exercise.sets && (
+                                                <span className="flex items-center gap-1">
+                                                  <strong>Sets:</strong>{' '}
+                                                  {exercise.sets}
+                                                </span>
+                                              )}
+                                              {exercise.reps && (
+                                                <span className="flex items-center gap-1">
+                                                  <strong>Reps:</strong>{' '}
+                                                  {exercise.reps}
+                                                </span>
+                                              )}
+                                              {exercise.duration_seconds && (
+                                                <span className="flex items-center gap-1">
+                                                  <Clock className="h-3 w-3" />
+                                                  {exercise.duration_seconds}s
+                                                </span>
+                                              )}
+                                              {exercise.rest_time_seconds && (
+                                                <span className="flex items-center gap-1">
+                                                  <strong>Rest:</strong>{' '}
+                                                  {exercise.rest_time_seconds}s
+                                                </span>
+                                              )}
+                                              {exercise.equipment?.name && (
+                                                <span className="flex items-center gap-1">
+                                                  <strong>Equipment:</strong>{' '}
+                                                  {exercise.equipment.name}
+                                                </span>
+                                              )}
+                                            </div>
+                                            {exercise.notes && (
+                                              <p className="text-sm text-gray-600 mt-1 italic">
+                                                {exercise.notes}
+                                              </p>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              handleEditExercise(exercise);
+                                            }}
+                                            className="text-blue-500 hover:text-blue-700"
+                                          >
+                                            <Edit className="h-4 w-4" />
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              handleDeleteExercise(exercise);
+                                            }}
+                                            className="text-red-500 hover:text-red-700"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </div>
+                                      </div>
+
+                                      {/* Alternative Exercises */}
+                                      {alternatives.length > 0 && (
+                                        <div className="ml-12 space-y-2">
+                                          <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                                            <span className="text-amber-600">
+                                              ⚡
+                                            </span>
+                                            Alternative Exercises (
+                                            {alternatives.length})
+                                          </div>
+                                          {alternatives.map((alt, altIndex) => (
+                                            <div
+                                              key={alt.id}
+                                              className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200 hover:bg-amber-100 transition-colors cursor-pointer"
+                                              onClick={() =>
+                                                handlePreviewExercise(alt)
+                                              }
+                                            >
+                                              <div className="flex items-center gap-3 flex-1">
+                                                <div className="flex items-center justify-center w-6 h-6 bg-amber-100 rounded-full text-xs font-semibold text-amber-600">
+                                                  {altIndex + 1}
+                                                </div>
+                                                <div className="flex-1">
+                                                  <h5 className="font-medium text-gray-900 text-sm">
+                                                    {alt.exercise?.name ||
+                                                      'Unknown Exercise'}
+                                                  </h5>
+                                                  <div className="flex items-center gap-3 mt-1 text-xs text-gray-600">
+                                                    {alt.sets && (
+                                                      <span>
+                                                        Sets: {alt.sets}
+                                                      </span>
+                                                    )}
+                                                    {alt.reps && (
+                                                      <span>
+                                                        Reps: {alt.reps}
+                                                      </span>
+                                                    )}
+                                                    {alt.duration_seconds && (
+                                                      <span>
+                                                        {alt.duration_seconds}s
+                                                      </span>
+                                                    )}
+                                                    {alt.equipment?.name && (
+                                                      <span>
+                                                        Equipment:{' '}
+                                                        {alt.equipment.name}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                              <div className="flex items-center gap-1">
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={e => {
+                                                    e.stopPropagation();
+                                                    handleEditExercise(alt);
+                                                  }}
+                                                  className="text-blue-500 hover:text-blue-700 h-7 w-7 p-0"
+                                                >
+                                                  <Edit className="h-3 w-3" />
+                                                </Button>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={e => {
+                                                    e.stopPropagation();
+                                                    handleDeleteExercise(alt);
+                                                  }}
+                                                  className="text-red-500 hover:text-red-700 h-7 w-7 p-0"
+                                                >
+                                                  <Trash2 className="h-3 w-3" />
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
                             </div>
                           ) : (
                             <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
@@ -584,14 +769,17 @@ export function WorkoutDayDetails({
         open={isCreateSectionDialogOpen}
         onOpenChange={setIsCreateSectionDialogOpen}
       >
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-7xl w-full">
           <DialogHeader>
             <DialogTitle>Add Workout Section</DialogTitle>
             <DialogDescription>
               Create a new section to organize exercises in your workout
             </DialogDescription>
           </DialogHeader>
-          <DaySectionForm onSubmit={handleCreateSection} />
+          <DaySectionForm
+            onSubmit={handleCreateSection}
+            existingSections={sections}
+          />
         </DialogContent>
       </Dialog>
 
@@ -599,7 +787,7 @@ export function WorkoutDayDetails({
         open={isEditSectionDialogOpen}
         onOpenChange={setIsEditSectionDialogOpen}
       >
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-7xl w-full">
           <DialogHeader>
             <DialogTitle>Edit Workout Section</DialogTitle>
             <DialogDescription>Update the section details</DialogDescription>
@@ -608,6 +796,7 @@ export function WorkoutDayDetails({
             <DaySectionForm
               initialData={editingSection}
               onSubmit={handleUpdateSection}
+              existingSections={sections}
             />
           )}
         </DialogContent>
@@ -617,7 +806,7 @@ export function WorkoutDayDetails({
         open={isAddExerciseDialogOpen}
         onOpenChange={setIsAddExerciseDialogOpen}
       >
-        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto w-full">
           <DialogHeader>
             <DialogTitle>Add Exercise</DialogTitle>
             <DialogDescription>
@@ -625,7 +814,217 @@ export function WorkoutDayDetails({
             </DialogDescription>
           </DialogHeader>
           {selectedSectionForExercise && (
-            <ExerciseForm onSubmit={handleAddExercise} />
+            <ExerciseForm
+              onSubmit={handleAddExercise}
+              sectionId={selectedSectionForExercise.id}
+              existingExercises={
+                sectionExercises[selectedSectionForExercise.id] || []
+              }
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Exercise Edit Dialog */}
+      <Dialog
+        open={isEditExerciseDialogOpen}
+        onOpenChange={setIsEditExerciseDialogOpen}
+      >
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto w-full">
+          <DialogHeader>
+            <DialogTitle>Edit Exercise</DialogTitle>
+            <DialogDescription>
+              Update exercise details and settings
+            </DialogDescription>
+          </DialogHeader>
+          {editingExercise && (
+            <ExerciseForm
+              onSubmit={handleUpdateExercise}
+              sectionId={editingExercise.day_section_id}
+              existingExercises={
+                sectionExercises[editingExercise.day_section_id] || []
+              }
+              initialData={editingExercise}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Exercise Preview Dialog */}
+      <Dialog
+        open={isExercisePreviewOpen}
+        onOpenChange={setIsExercisePreviewOpen}
+      >
+        <DialogContent className="max-w-4xl w-full">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" />
+              Exercise Details
+            </DialogTitle>
+          </DialogHeader>
+          {previewExercise && (
+            <div className="space-y-6">
+              {/* Exercise Info */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    {previewExercise.exercise?.name || 'Unknown Exercise'}
+                  </CardTitle>
+                  {previewExercise.exercise?.description && (
+                    <CardDescription>
+                      {previewExercise.exercise.description}
+                    </CardDescription>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {previewExercise.sets && (
+                      <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
+                        <Target className="h-4 w-4 text-blue-600" />
+                        <div>
+                          <p className="text-sm font-medium text-blue-900">
+                            Sets
+                          </p>
+                          <p className="text-lg font-bold text-blue-700">
+                            {previewExercise.sets}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {previewExercise.reps && (
+                      <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg">
+                        <RefreshCcw className="h-4 w-4 text-green-600" />
+                        <div>
+                          <p className="text-sm font-medium text-green-900">
+                            Reps
+                          </p>
+                          <p className="text-lg font-bold text-green-700">
+                            {previewExercise.reps}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {previewExercise.duration_seconds && (
+                      <div className="flex items-center gap-2 p-3 bg-purple-50 rounded-lg">
+                        <Clock className="h-4 w-4 text-purple-600" />
+                        <div>
+                          <p className="text-sm font-medium text-purple-900">
+                            Duration
+                          </p>
+                          <p className="text-lg font-bold text-purple-700">
+                            {previewExercise.duration_seconds}s
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {previewExercise.rest_time_seconds && (
+                      <div className="flex items-center gap-2 p-3 bg-orange-50 rounded-lg">
+                        <Clock className="h-4 w-4 text-orange-600" />
+                        <div>
+                          <p className="text-sm font-medium text-orange-900">
+                            Rest
+                          </p>
+                          <p className="text-lg font-bold text-orange-700">
+                            {previewExercise.rest_time_seconds}s
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    {previewExercise.equipment?.name &&
+                      previewExercise.equipment.name !== 'NONE' && (
+                        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                          <div className="h-4 w-4 text-gray-600">🏋️</div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">
+                              Equipment
+                            </p>
+                            <p className="text-lg font-bold text-gray-700">
+                              {previewExercise.equipment.name}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Exercise Notes */}
+              {previewExercise.notes && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Notes</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-gray-700">{previewExercise.notes}</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Alternative Exercises */}
+              {previewExercise.alternatives &&
+                previewExercise.alternatives.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">
+                        Alternative Exercises
+                      </CardTitle>
+                      <CardDescription>
+                        These exercises can be used as alternatives
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {previewExercise.alternatives.map((alt, index) => (
+                          <div
+                            key={alt.id}
+                            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center justify-center w-6 h-6 bg-orange-100 rounded-full text-xs font-semibold text-orange-600">
+                                {index + 1}
+                              </div>
+                              <div>
+                                <h4 className="font-medium text-gray-900">
+                                  {alt.exercise?.name || 'Unknown Exercise'}
+                                </h4>
+                                <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
+                                  {alt.sets && <span>Sets: {alt.sets}</span>}
+                                  {alt.reps && <span>Reps: {alt.reps}</span>}
+                                  {alt.duration_seconds && (
+                                    <span>
+                                      Duration: {alt.duration_seconds}s
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsExercisePreviewOpen(false);
+                    handleEditExercise(previewExercise);
+                  }}
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Exercise
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsExercisePreviewOpen(false)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
           )}
         </DialogContent>
       </Dialog>

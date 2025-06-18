@@ -474,7 +474,7 @@ export function PlanDetails({ plan, onClose }: PlanDetailsProps) {
         open={isCreateDayDialogOpen}
         onOpenChange={setIsCreateDayDialogOpen}
       >
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-7xl w-full">
           <DialogHeader>
             <DialogTitle>Add Workout Day</DialogTitle>
             <DialogDescription>
@@ -489,7 +489,7 @@ export function PlanDetails({ plan, onClose }: PlanDetailsProps) {
       </Dialog>
 
       <Dialog open={isEditDayDialogOpen} onOpenChange={setIsEditDayDialogOpen}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-7xl w-full">
           <DialogHeader>
             <DialogTitle>Edit Workout Day</DialogTitle>
             <DialogDescription>
@@ -509,7 +509,7 @@ export function PlanDetails({ plan, onClose }: PlanDetailsProps) {
         open={isDayDetailsDialogOpen}
         onOpenChange={setIsDayDetailsDialogOpen}
       >
-        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto w-full">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
               <Dumbbell className="h-6 w-6 text-blue-600" />

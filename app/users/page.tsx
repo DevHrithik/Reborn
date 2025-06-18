@@ -527,7 +527,7 @@ export default function UsersPage() {
 
       {/* User Detail Dialog */}
       <Dialog open={showUserDetail} onOpenChange={setShowUserDetail}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-7xl max-h-[80vh] overflow-y-auto w-full">
           {selectedUser && (
             <>
               <DialogHeader>

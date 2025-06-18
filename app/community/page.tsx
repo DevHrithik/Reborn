@@ -1,4 +1,4 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import CommunityDashboard from '@/components/community/community-dashboard';
 
 export default function CommunityPage() {
   return (
@@ -12,16 +12,7 @@ export default function CommunityPage() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Community Overview</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-gray-500">
-            Community moderation features coming soon...
-          </p>
-        </CardContent>
-      </Card>
+      <CommunityDashboard />
     </div>
   );
 }

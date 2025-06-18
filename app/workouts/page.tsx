@@ -43,6 +43,7 @@ import { WorkoutService, Plan } from '@/lib/data/workouts';
 import { PlanForm } from '@/components/workouts/plan-form';
 import { PlanDetails } from '@/components/workouts/plan-details';
 import { ExerciseLibrary } from '@/components/workouts/exercise-library';
+import { EquipmentLibrary } from '@/components/workouts/equipment-library';
 
 export default function WorkoutsPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
@@ -53,6 +54,7 @@ export default function WorkoutsPage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isExerciseLibraryOpen, setIsExerciseLibraryOpen] = useState(false);
+  const [isEquipmentLibraryOpen, setIsEquipmentLibraryOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
   const [activeTab, setActiveTab] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -252,6 +254,14 @@ export default function WorkoutsPage() {
                 Exercise Library
               </Button>
               <Button
+                variant="outline"
+                onClick={() => setIsEquipmentLibraryOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <Dumbbell className="h-4 w-4" />
+                Equipment Library
+              </Button>
+              <Button
                 onClick={() => setIsCreateDialogOpen(true)}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
               >
@@ -408,7 +418,7 @@ export default function WorkoutsPage() {
               {filteredPlans.map(plan => (
                 <Card
                   key={plan.id}
-                  className={`group hover:shadow-lg transition-all duration-200 border-0 shadow-sm hover:shadow-md cursor-pointer ${
+                  className={`transition-all duration-200 border-0 shadow-sm hover:shadow-md cursor-pointer ${
                     viewMode === 'list' ? 'flex flex-row' : ''
                   }`}
                   onClick={() => handleViewPlan(plan)}
@@ -522,7 +532,7 @@ export default function WorkoutsPage() {
 
       {/* Dialogs */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-7xl w-full">
           <DialogHeader>
             <DialogTitle>Create New Workout Plan</DialogTitle>
             <DialogDescription>
@@ -534,7 +544,7 @@ export default function WorkoutsPage() {
       </Dialog>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-6xl">
+        <DialogContent className="max-w-7xl w-full">
           <DialogHeader>
             <DialogTitle>Edit Workout Plan</DialogTitle>
             <DialogDescription>
@@ -548,7 +558,7 @@ export default function WorkoutsPage() {
       </Dialog>
 
       <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
-        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto w-full">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
               <span className="text-2xl">
@@ -579,7 +589,7 @@ export default function WorkoutsPage() {
         open={isExerciseLibraryOpen}
         onOpenChange={setIsExerciseLibraryOpen}
       >
-        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto w-full">
           <DialogHeader>
             <DialogTitle>Exercise Library</DialogTitle>
             <DialogDescription>
@@ -587,6 +597,21 @@ export default function WorkoutsPage() {
             </DialogDescription>
           </DialogHeader>
           <ExerciseLibrary />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isEquipmentLibraryOpen}
+        onOpenChange={setIsEquipmentLibraryOpen}
+      >
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto w-full">
+          <DialogHeader>
+            <DialogTitle>Equipment Library</DialogTitle>
+            <DialogDescription>
+              Manage your workout equipment and gear
+            </DialogDescription>
+          </DialogHeader>
+          <EquipmentLibrary />
         </DialogContent>
       </Dialog>
     </div>

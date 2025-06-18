@@ -306,7 +306,7 @@ export function ExerciseLibrary() {
 
       {/* Create Exercise Dialog */}
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto w-full">
           <DialogHeader>
             <DialogTitle>Add New Exercise</DialogTitle>
             <DialogDescription>
@@ -394,7 +394,7 @@ export function ExerciseLibrary() {
 
       {/* Edit Exercise Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto w-full">
           <DialogHeader>
             <DialogTitle>Edit Exercise</DialogTitle>
             <DialogDescription>Update the exercise details</DialogDescription>

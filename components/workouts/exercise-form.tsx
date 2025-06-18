@@ -41,16 +41,19 @@ const exerciseFormSchema = z.object({
   sets: z.number().min(1).optional(),
   rest_time_seconds: z.number().min(0).optional(),
   notes: z.string().optional(),
-  alternatives: z.array(
-    z.object({
-      exercise_id: z.number().min(1, 'Please select an exercise'),
-      reps: z.string().optional(),
-      duration_seconds: z.number().min(0).optional(),
-      sets: z.number().min(1).optional(),
-      rest_time_seconds: z.number().min(0).optional(),
-      notes: z.string().optional(),
-    })
-  ),
+  alternatives: z
+    .array(
+      z.object({
+        exercise_id: z.number().min(1, 'Please select an exercise').optional(),
+        equipment_id: z.number().optional(),
+        reps: z.string().optional(),
+        duration_seconds: z.number().min(0).optional(),
+        sets: z.number().min(1).optional(),
+        rest_time_seconds: z.number().min(0).optional(),
+        notes: z.string().optional(),
+      })
+    )
+    .optional(),
 });
 
 type ExerciseFormData = z.infer<typeof exerciseFormSchema>;
@@ -59,12 +62,14 @@ interface ExerciseFormProps {
   onSubmit: (data: Omit<SectionExercise, 'id' | 'created_at'>) => void;
   sectionId: number;
   existingExercises: any[];
+  initialData?: SectionExercise;
 }
 
 export function ExerciseForm({
   onSubmit,
   sectionId,
   existingExercises,
+  initialData,
 }: ExerciseFormProps) {
   const [loading, setLoading] = useState(false);
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -73,6 +78,8 @@ export function ExerciseForm({
   const [showCreateExercise, setShowCreateExercise] = useState(false);
   const [newExerciseName, setNewExerciseName] = useState('');
   const [newExerciseDescription, setNewExerciseDescription] = useState('');
+  const [showCreateEquipment, setShowCreateEquipment] = useState(false);
+  const [newEquipmentName, setNewEquipmentName] = useState('');
 
   const {
     register,
@@ -83,14 +90,26 @@ export function ExerciseForm({
     control,
   } = useForm<ExerciseFormData>({
     resolver: zodResolver(exerciseFormSchema),
-    defaultValues: {
-      exercise_order:
-        Math.max(...existingExercises.map(e => e.exercise_order), 0) + 1,
-      sets: 1,
-      rest_time_seconds: 0,
-      duration_seconds: 0,
-      alternatives: [],
-    },
+    defaultValues: initialData
+      ? {
+          exercise_id: initialData.exercise_id,
+          exercise_order: initialData.exercise_order,
+          equipment_id: initialData.equipment_id || undefined,
+          reps: initialData.reps || '',
+          sets: initialData.sets || 1,
+          duration_seconds: initialData.duration_seconds || 0,
+          rest_time_seconds: initialData.rest_time_seconds || 0,
+          notes: initialData.notes || '',
+          alternatives: [],
+        }
+      : {
+          exercise_order:
+            Math.max(...existingExercises.map(e => e.exercise_order), 0) + 1,
+          sets: 1,
+          rest_time_seconds: 0,
+          duration_seconds: 0,
+          alternatives: [],
+        },
   });
 
   const {
@@ -153,10 +172,41 @@ export function ExerciseForm({
     }
   };
 
+  const handleCreateNewEquipment = async () => {
+    if (!newEquipmentName.trim()) {
+      toast.error('Equipment name is required');
+      return;
+    }
+
+    try {
+      const newEquipment = await WorkoutService.createEquipment({
+        name: newEquipmentName,
+      });
+
+      setEquipment(prev => [...prev, newEquipment]);
+      setValue('equipment_id', newEquipment.id);
+      setShowCreateEquipment(false);
+      setNewEquipmentName('');
+      toast.success('Equipment created successfully');
+    } catch (error) {
+      console.error('Error creating equipment:', error);
+      toast.error('Failed to create equipment');
+    }
+  };
+
   const handleFormSubmit = async (data: ExerciseFormData) => {
     setLoading(true);
+
+    // Check if we have alternatives to create
+    const hasAlternatives = data.alternatives && data.alternatives.length > 0;
+
+    console.log('Form submission data:', data);
+    console.log('Has alternatives:', hasAlternatives);
+    console.log('Alternatives:', data.alternatives);
+
     try {
-      await onSubmit({
+      // Create the main exercise first
+      const mainExerciseData = {
         day_section_id: sectionId,
         exercise_id: data.exercise_id,
         parent_section_exercise_id: null,
@@ -167,8 +217,91 @@ export function ExerciseForm({
         sets: data.sets || null,
         rest_time_seconds: data.rest_time_seconds || null,
         notes: data.notes || null,
-        alternatives: data.alternatives,
-      });
+      };
+
+      let createdMainExercise: any = null;
+
+      if (initialData) {
+        // Editing existing exercise - use the normal onSubmit callback
+        await onSubmit(mainExerciseData);
+        createdMainExercise = { id: initialData.id }; // Use existing ID for alternatives
+      } else {
+        // Creating new exercise
+        if (hasAlternatives) {
+          // If we have alternatives, create directly to get the ID
+          createdMainExercise =
+            await WorkoutService.createSectionExercise(mainExerciseData);
+          console.log(
+            'Main exercise created with ID:',
+            createdMainExercise?.id
+          );
+        } else {
+          // No alternatives, use normal onSubmit callback
+          await onSubmit(mainExerciseData);
+        }
+      }
+
+      // Create alternative exercises if any exist
+      if (hasAlternatives && createdMainExercise && data.alternatives) {
+        console.log(
+          'Creating alternatives for main exercise ID:',
+          createdMainExercise.id
+        );
+        for (let i = 0; i < data.alternatives.length; i++) {
+          const alt = data.alternatives[i];
+          console.log(`Alternative ${i + 1}:`, alt);
+          if (alt.exercise_id && alt.exercise_id > 0) {
+            const altData = {
+              day_section_id: sectionId,
+              exercise_id: alt.exercise_id,
+              parent_section_exercise_id: createdMainExercise.id,
+              exercise_order: i + 1, // Alternative exercise order
+              equipment_id: alt.equipment_id || null,
+              reps: alt.reps || null,
+              duration_seconds: alt.duration_seconds || null,
+              sets: alt.sets || null,
+              rest_time_seconds: alt.rest_time_seconds || null,
+              notes: alt.notes || null,
+            };
+            console.log('Creating alternative with data:', altData);
+            await WorkoutService.createSectionExercise(altData);
+            console.log('Alternative created successfully');
+          } else {
+            console.log(`Skipping alternative ${i + 1} - no valid exercise_id`);
+          }
+        }
+      }
+
+      // For new exercises with alternatives, we need to call the callback to refresh the UI
+      if (!initialData && hasAlternatives) {
+        // Call the onSubmit callback to refresh the parent component
+        // Note: We pass a dummy data as the main exercise was already created
+        onSubmit({
+          day_section_id: sectionId,
+          exercise_id: data.exercise_id,
+          parent_section_exercise_id: null,
+          exercise_order: data.exercise_order,
+          equipment_id: data.equipment_id || null,
+          reps: data.reps || null,
+          duration_seconds: data.duration_seconds || null,
+          sets: data.sets || null,
+          rest_time_seconds: data.rest_time_seconds || null,
+          notes: data.notes || null,
+        });
+      }
+
+      toast.success(
+        initialData
+          ? hasAlternatives
+            ? 'Exercise and alternatives updated successfully'
+            : 'Exercise updated successfully'
+          : hasAlternatives
+            ? 'Exercise and alternatives created successfully'
+            : 'Exercise created successfully'
+      );
+    } catch (error) {
+      console.error('Error submitting exercise:', error);
+      toast.error('Failed to save exercise');
     } finally {
       setLoading(false);
     }
@@ -310,16 +443,19 @@ export function ExerciseForm({
             <div className="space-y-2">
               <Label htmlFor="equipment_id">Equipment (Optional)</Label>
               <Select
-                value={watch('equipment_id')?.toString() || ''}
+                value={watch('equipment_id')?.toString() || 'none'}
                 onValueChange={value =>
-                  setValue('equipment_id', value ? parseInt(value) : undefined)
+                  setValue(
+                    'equipment_id',
+                    value === 'none' ? undefined : parseInt(value)
+                  )
                 }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select equipment" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No equipment</SelectItem>
+                  <SelectItem value="none">No equipment</SelectItem>
                   {equipment.map(item => (
                     <SelectItem key={item.id} value={item.id.toString()}>
                       {item.name}
@@ -327,6 +463,45 @@ export function ExerciseForm({
                   ))}
                 </SelectContent>
               </Select>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowCreateEquipment(!showCreateEquipment)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Equipment
+                </Button>
+              </div>
+
+              {showCreateEquipment && (
+                <Card>
+                  <CardContent className="pt-6 space-y-4">
+                    <div className="space-y-2">
+                      <Label>Equipment Name</Label>
+                      <Input
+                        placeholder="Enter equipment name"
+                        value={newEquipmentName}
+                        onChange={e => setNewEquipmentName(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button type="button" onClick={handleCreateNewEquipment}>
+                        Create Equipment
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowCreateEquipment(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
 
@@ -401,7 +576,7 @@ export function ExerciseForm({
               variant="outline"
               onClick={() =>
                 addAlternative({
-                  exercise_id: 0,
+                  equipment_id: undefined,
                   reps: '',
                   sets: 1,
                   duration_seconds: 0,
@@ -436,35 +611,82 @@ export function ExerciseForm({
                     </div>
                   </CardHeader>
                   <CardContent className="pt-0 space-y-4">
-                    <div className="space-y-2">
-                      <Label>Exercise</Label>
-                      <Select
-                        value={
-                          watch(
-                            `alternatives.${index}.exercise_id`
-                          )?.toString() || ''
-                        }
-                        onValueChange={value =>
-                          setValue(
-                            `alternatives.${index}.exercise_id`,
-                            parseInt(value)
-                          )
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Choose alternative exercise" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-40">
-                          {exercises.map(exercise => (
-                            <SelectItem
-                              key={exercise.id}
-                              value={exercise.id.toString()}
-                            >
-                              {exercise.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Exercise</Label>
+                        <Select
+                          value={
+                            watch(
+                              `alternatives.${index}.exercise_id`
+                            )?.toString() || ''
+                          }
+                          onValueChange={value =>
+                            setValue(
+                              `alternatives.${index}.exercise_id`,
+                              parseInt(value)
+                            )
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Choose alternative exercise" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-40">
+                            {exercises.map(exercise => (
+                              <SelectItem
+                                key={exercise.id}
+                                value={exercise.id.toString()}
+                              >
+                                {exercise.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Equipment (Optional)</Label>
+                        <div className="flex gap-2">
+                          <Select
+                            value={
+                              watch(
+                                `alternatives.${index}.equipment_id`
+                              )?.toString() || 'none'
+                            }
+                            onValueChange={value =>
+                              setValue(
+                                `alternatives.${index}.equipment_id`,
+                                value === 'none' ? undefined : parseInt(value)
+                              )
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select equipment" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No equipment</SelectItem>
+                              {equipment.map(item => (
+                                <SelectItem
+                                  key={item.id}
+                                  value={item.id.toString()}
+                                >
+                                  {item.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              setShowCreateEquipment(!showCreateEquipment)
+                            }
+                            className="px-3"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -536,7 +758,13 @@ export function ExerciseForm({
 
       <div className="flex justify-end space-x-2">
         <Button type="submit" disabled={loading}>
-          {loading ? 'Adding Exercise...' : 'Add Exercise'}
+          {loading
+            ? initialData
+              ? 'Updating Exercise...'
+              : 'Adding Exercise...'
+            : initialData
+              ? 'Update Exercise'
+              : 'Add Exercise'}
         </Button>
       </div>
     </form>

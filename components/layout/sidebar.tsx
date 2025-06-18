@@ -58,18 +58,18 @@ const navigation = [
     icon: HelpCircle,
     color: 'from-yellow-500 to-orange-500',
   },
-  {
-    name: 'Analytics',
-    href: ROUTES.ANALYTICS,
-    icon: BarChart3,
-    color: 'from-indigo-500 to-purple-500',
-  },
-  {
-    name: 'Settings',
-    href: ROUTES.SETTINGS,
-    icon: Settings,
-    color: 'from-gray-500 to-slate-600',
-  },
+  // {
+  //   name: 'Analytics',
+  //   href: ROUTES.ANALYTICS,
+  //   icon: BarChart3,
+  //   color: 'from-indigo-500 to-purple-500',
+  // },
+  // {
+  //   name: 'Settings',
+  //   href: ROUTES.SETTINGS,
+  //   icon: Settings,
+  //   color: 'from-gray-500 to-slate-600',
+  // },
 ];
 
 interface SidebarProps {

@@ -322,6 +322,24 @@ export class WorkoutService {
     return data as Equipment;
   }
 
+  static async updateEquipment(id: number, updates: Partial<Equipment>) {
+    const { data, error } = await supabase
+      .from('equipment')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as Equipment;
+  }
+
+  static async deleteEquipment(id: number) {
+    const { error } = await supabase.from('equipment').delete().eq('id', id);
+
+    if (error) throw error;
+  }
+
   // Bulk Operations
   static async duplicateWeek(planId: number, fromWeek: number, toWeek: number) {
     try {
