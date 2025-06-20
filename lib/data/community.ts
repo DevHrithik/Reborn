@@ -7,19 +7,19 @@ import type { Database } from '@/lib/types/database';
 export interface CommunityPost {
   id: number;
   user_id: string;
-  title: string;
+  title?: string | null;
   content: string;
-  status: 'published' | 'draft' | 'archived' | 'flagged';
-  category: 'General' | 'Workouts' | 'Nutrition' | 'Support';
-  tags: string[];
-  likes_count: number;
-  comments_count: number;
-  is_pinned: boolean;
+  status?: 'published' | 'draft' | 'archived' | 'flagged';
+  category?: 'General' | 'Workouts' | 'Nutrition' | 'Support';
+  tags?: string[] | null;
+  likes_count?: number;
+  comments_count?: number;
+  is_pinned?: boolean;
+  post_type: 'milestone' | 'tip' | 'celebration' | 'question' | 'sharing';
+  image_url?: string | null;
   created_at: string;
   updated_at: string;
   // Additional properties used by the dashboard
-  post_type?: string;
-  image_url?: string | null;
   moderation_status?: 'pending' | 'approved' | 'rejected';
   is_flagged?: boolean;
   user?: {
@@ -35,9 +35,9 @@ export interface Comment {
   post_id: number;
   user_id: string;
   content: string;
-  parent_comment_id: number | null;
-  status: 'published' | 'hidden' | 'flagged';
-  likes_count: number;
+  parent_comment_id?: number | null;
+  status?: 'published' | 'hidden' | 'flagged';
+  likes_count?: number;
   created_at: string;
   updated_at: string;
   user?: {
@@ -66,6 +66,9 @@ export interface CommunityComment {
   user_id: string;
   post_id: number;
   content: string;
+  parent_comment_id?: number | null;
+  status?: 'published' | 'hidden' | 'flagged';
+  likes_count?: number;
   created_at: string;
   updated_at: string;
   user?: {
@@ -130,7 +133,7 @@ export class CommunityService {
     status?: string,
     category?: string
   ): Promise<{ posts: CommunityPost[]; total: number }> {
-    let query = (supabase as any)
+    let query = supabase
       .from('community_posts')
       .select(
         `
@@ -165,7 +168,7 @@ export class CommunityService {
   }
 
   static async getPost(id: number): Promise<CommunityPost | null> {
-    const { data, error } = await (supabase as any)
+    const { data, error } = await supabase
       .from('community_posts')
       .select(
         `
@@ -192,7 +195,7 @@ export class CommunityService {
     id: number,
     status: CommunityPost['status']
   ): Promise<void> {
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('community_posts')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', id);
@@ -201,7 +204,7 @@ export class CommunityService {
   }
 
   static async deletePost(id: number): Promise<void> {
-    const { error } = await (supabase as any)
+    const { error } = await supabase
       .from('community_posts')
       .delete()
       .eq('id', id);
@@ -214,8 +217,8 @@ export class CommunityService {
     page: number = 1,
     limit: number = 50
   ): Promise<{ comments: Comment[]; total: number }> {
-    const { data, error, count } = await (supabase as any)
-      .from('comments')
+    const { data, error, count } = await supabase
+      .from('community_comments')
       .select(
         `
         *,
@@ -228,40 +231,16 @@ export class CommunityService {
         { count: 'exact' }
       )
       .eq('post_id', postId)
-      .is('parent_comment_id', null)
       .order('created_at', { ascending: false })
       .range((page - 1) * limit, page * limit - 1);
 
     if (error) throw error;
 
-    // Get replies for each comment
+    // Note: community_comments table doesn't have parent_comment_id, so no nested replies
     const comments = data || [];
-    const commentsWithReplies = await Promise.all(
-      comments.map(async (comment: Comment) => {
-        const { data: replies } = await (supabase as any)
-          .from('comments')
-          .select(
-            `
-            *,
-            user:users!inner(
-              id,
-              full_name,
-              avatar_url
-            )
-          `
-          )
-          .eq('parent_comment_id', comment.id)
-          .order('created_at', { ascending: true });
-
-        return {
-          ...comment,
-          replies: replies || [],
-        };
-      })
-    );
 
     return {
-      comments: commentsWithReplies as Comment[],
+      comments: comments as Comment[],
       total: count || 0,
     };
   }
@@ -270,8 +249,8 @@ export class CommunityService {
     id: number,
     status: Comment['status']
   ): Promise<void> {
-    const { error } = await (supabase as any)
-      .from('comments')
+    const { error } = await supabase
+      .from('community_comments')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', id);
 
@@ -279,8 +258,8 @@ export class CommunityService {
   }
 
   static async deleteComment(id: number): Promise<void> {
-    const { error } = await (supabase as any)
-      .from('comments')
+    const { error } = await supabase
+      .from('community_comments')
       .delete()
       .eq('id', id);
 
@@ -292,8 +271,9 @@ export class CommunityService {
     limit: number = 20,
     status?: string
   ): Promise<{ reports: Report[]; total: number }> {
-    let query = (supabase as any)
-      .from('reports')
+    // Using content_moderation table as proxy for reports
+    let query = supabase
+      .from('content_moderation')
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range((page - 1) * limit, page * limit - 1);
@@ -306,8 +286,28 @@ export class CommunityService {
 
     if (error) throw error;
 
+    // Transform content_moderation data to Report format
+    const reports = (data || []).map((mod: any) => ({
+      id: parseInt(mod.id) || 0,
+      post_id: mod.content_type === 'post' ? parseInt(mod.content_id) : null,
+      comment_id:
+        mod.content_type === 'comment' ? parseInt(mod.content_id) : null,
+      reporter_user_id: mod.moderator_id || '',
+      reason: mod.reason || 'other',
+      description: mod.notes || null,
+      status:
+        mod.status === 'pending'
+          ? 'pending'
+          : mod.status === 'approved'
+            ? 'resolved'
+            : 'dismissed',
+      created_at: mod.created_at,
+      resolved_at: mod.updated_at !== mod.created_at ? mod.updated_at : null,
+      resolved_by: mod.moderator_id || null,
+    }));
+
     return {
-      reports: (data || []) as Report[],
+      reports: reports as Report[],
       total: count || 0,
     };
   }
@@ -317,22 +317,27 @@ export class CommunityService {
     status: Report['status'],
     resolvedBy?: string
   ): Promise<void> {
+    // Map Report status to content_moderation status
+    const moderationStatus =
+      status === 'resolved'
+        ? 'approved'
+        : status === 'dismissed'
+          ? 'rejected'
+          : 'pending';
+
     const updateData: any = {
-      status,
+      status: moderationStatus,
       updated_at: new Date().toISOString(),
     };
 
-    if (status === 'resolved') {
-      updateData.resolved_at = new Date().toISOString();
-      if (resolvedBy) {
-        updateData.resolved_by = resolvedBy;
-      }
+    if (resolvedBy) {
+      updateData.moderator_id = resolvedBy;
     }
 
-    const { error } = await (supabase as any)
-      .from('reports')
+    const { error } = await supabase
+      .from('content_moderation')
       .update(updateData)
-      .eq('id', id);
+      .eq('id', id.toString());
 
     if (error) throw error;
   }
@@ -351,25 +356,26 @@ export class CommunityService {
     const todayISO = today.toISOString();
 
     const [postsCount, commentsCount, reportsCount] = await Promise.all([
-      (supabase as any)
+      supabase
         .from('community_posts')
         .select('*', { count: 'exact', head: true }),
-      (supabase as any)
-        .from('comments')
+      supabase
+        .from('community_comments')
         .select('*', { count: 'exact', head: true }),
-      (supabase as any)
-        .from('reports')
+      // Note: no specific reports table in schema, using content_moderation instead
+      supabase
+        .from('content_moderation')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'pending'),
     ]);
 
     const [postsTodayCount, commentsTodayCount] = await Promise.all([
-      (supabase as any)
+      supabase
         .from('community_posts')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', todayISO),
-      (supabase as any)
-        .from('comments')
+      supabase
+        .from('community_comments')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', todayISO),
     ]);
@@ -379,13 +385,13 @@ export class CommunityService {
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const sevenDaysAgoISO = sevenDaysAgo.toISOString();
 
-    const { data: activeUsersData } = await (supabase as any)
+    const { data: activeUsersData } = await supabase
       .from('community_posts')
       .select('user_id')
       .gte('created_at', sevenDaysAgoISO);
 
-    const { data: activeCommentersData } = await (supabase as any)
-      .from('comments')
+    const { data: activeCommentersData } = await supabase
+      .from('community_comments')
       .select('user_id')
       .gte('created_at', sevenDaysAgoISO);
 
@@ -435,7 +441,7 @@ export class CommunityService {
     filters?: PostFilters
   ): Promise<CommunityPost[]> {
     try {
-      let query = (supabase as any)
+      let query = supabase
         .from('community_posts')
         .select(
           `
@@ -498,7 +504,7 @@ export class CommunityService {
 
   static async getPostById(postId: number): Promise<CommunityPost | null> {
     try {
-      const { data: post, error } = await (supabase as any)
+      const { data: post, error } = await supabase
         .from('community_posts')
         .select(
           `
@@ -542,15 +548,17 @@ export class CommunityService {
 
   static async getPostComments(postId: number): Promise<CommunityComment[]> {
     try {
-      const { data: comments, error } = await (supabase as any)
-        .from('comments')
+      // Fetch from community_comments table
+      const { data: comments, error } = await supabase
+        .from('community_comments')
         .select(
           `
           *,
           user:users!inner(
             id,
             full_name,
-            avatar_url
+            avatar_url,
+            email
           )
         `
         )
@@ -559,7 +567,9 @@ export class CommunityService {
 
       if (error) {
         console.error('Error fetching comments:', error);
-        throw error;
+        throw new Error(
+          `Failed to fetch comments: ${error.message || 'Unknown error'}`
+        );
       }
 
       return (comments || []).map((comment: any) => ({
@@ -568,13 +578,23 @@ export class CommunityService {
       })) as CommunityComment[];
     } catch (error) {
       console.error('Error in getPostComments:', error);
-      throw error;
+      // If it's our custom error, re-throw it
+      if (
+        error instanceof Error &&
+        error.message.startsWith('Failed to fetch comments:')
+      ) {
+        throw error;
+      }
+      // For other errors, provide a more descriptive message
+      throw new Error(
+        `Unable to load comments: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
   private static async getPostLikesCount(postId: number): Promise<number> {
     try {
-      const { count, error } = await (supabase as any)
+      const { count, error } = await supabase
         .from('community_likes')
         .select('*', { count: 'exact', head: true })
         .eq('post_id', postId);
@@ -593,8 +613,8 @@ export class CommunityService {
 
   private static async getPostCommentsCount(postId: number): Promise<number> {
     try {
-      const { count, error } = await (supabase as any)
-        .from('comments')
+      const { count, error } = await supabase
+        .from('community_comments')
         .select('*', { count: 'exact', head: true })
         .eq('post_id', postId);
 
@@ -614,7 +634,7 @@ export class CommunityService {
     postId: number
   ): Promise<ModerationAction | null> {
     try {
-      const { data: moderation, error } = await (supabase as any)
+      const { data: moderation, error } = await supabase
         .from('content_moderation')
         .select('*')
         .eq('content_type', 'post')
@@ -628,7 +648,7 @@ export class CommunityService {
         return null;
       }
 
-      return moderation;
+      return moderation as ModerationAction;
     } catch (error) {
       console.error('Error in getPostModerationStatus:', error);
       return null;
@@ -651,7 +671,7 @@ export class CommunityService {
 
       if (action === 'delete') {
         // Delete the post
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from('community_posts')
           .delete()
           .eq('id', postId);
@@ -677,7 +697,7 @@ export class CommunityService {
 
         console.log('Inserting moderation record:', moderationRecord);
 
-        const { error } = await (supabase as any)
+        const { error } = await supabase
           .from('content_moderation')
           .upsert(moderationRecord);
 
@@ -739,7 +759,7 @@ export class CommunityService {
 
       console.log('Bulk moderation records:', moderationRecords);
 
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('content_moderation')
         .upsert(moderationRecords);
 
@@ -784,16 +804,14 @@ export class CommunityService {
     details: any
   ): Promise<void> {
     try {
-      const { error } = await (supabase as any)
-        .from('admin_activity_logs')
-        .insert({
-          admin_id: adminId,
-          action,
-          resource_type: resourceType,
-          resource_id: resourceId,
-          details,
-          created_at: new Date().toISOString(),
-        });
+      const { error } = await supabase.from('admin_activity_logs').insert({
+        admin_id: adminId,
+        action,
+        resource_type: resourceType,
+        resource_id: resourceId,
+        details,
+        created_at: new Date().toISOString(),
+      });
 
       if (error) {
         console.error('Error logging admin activity:', error);
@@ -805,7 +823,7 @@ export class CommunityService {
 
   // Real-time subscriptions
   static subscribeToNewPosts(callback: (post: CommunityPost) => void) {
-    return (supabase as any)
+    return supabase
       .channel('new-posts')
       .on(
         'postgres_changes',
@@ -823,7 +841,7 @@ export class CommunityService {
   static subscribeToFlaggedContent(
     callback: (moderation: ModerationAction) => void
   ) {
-    return (supabase as any)
+    return supabase
       .channel('flagged-content')
       .on(
         'postgres_changes',

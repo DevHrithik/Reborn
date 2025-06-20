@@ -17,7 +17,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 
 const daySectionSchema = z.object({
-  name: z.enum(['Warm-up', 'Main Workout', 'Recovery', 'Cooldown']),
+  name: z.string(),
   section_order: z.number().min(1, 'Section order must be at least 1'),
   rounds: z.number().min(1, 'Must have at least 1 round'),
   rest_between_rounds_seconds: z
@@ -51,7 +51,7 @@ export function DaySectionForm({
     resolver: zodResolver(daySectionSchema),
     defaultValues: initialData
       ? {
-          name: initialData.name,
+          name: initialData.name || 'Warm-up',
           section_order: initialData.section_order,
           rounds: initialData.rounds,
           rest_between_rounds_seconds:
@@ -108,7 +108,7 @@ export function DaySectionForm({
           <Label htmlFor="name">Section Type</Label>
           <Select
             value={sectionName}
-            onValueChange={value => setValue('name', value as any)}
+            onValueChange={value => setValue('name', value)}
           >
             <SelectTrigger>
               <SelectValue placeholder="Select section type" />

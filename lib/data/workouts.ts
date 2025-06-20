@@ -1,7 +1,10 @@
+'use client';
+
 import { createClient } from '@/lib/supabase/client';
 
 const supabase = createClient();
 
+// Types based on actual database schema
 export interface Plan {
   id: number;
   name: string;
@@ -34,11 +37,11 @@ export interface Exercise {
 export interface DaySection {
   id: number;
   workout_day_id: number;
-  name: 'Warm-up' | 'Main Workout' | 'Recovery' | 'Cooldown';
-  section_type: 'Warm-up' | 'Main Workout' | 'Recovery' | 'Cooldown';
+  name: string;
+  section_type?: string | null;
   description?: string | null;
   section_order: number;
-  order_index: number;
+  order_index?: number;
   rounds: number;
   rest_between_rounds_seconds: number | null;
   created_at: string;
@@ -127,7 +130,7 @@ export class WorkoutService {
       .order('day_number');
 
     if (error) throw error;
-    return data as (WorkoutDay & { plan: Plan })[];
+    return data as WorkoutDay[];
   }
 
   static async createWorkoutDay(day: Omit<WorkoutDay, 'id' | 'created_at'>) {
@@ -272,14 +275,7 @@ export class WorkoutService {
       .order('exercise_order');
 
     if (error) throw error;
-    return data as (SectionExercise & {
-      exercise: Exercise;
-      equipment?: Equipment;
-      alternatives: (SectionExercise & {
-        exercise: Exercise;
-        equipment?: Equipment;
-      })[];
-    })[];
+    return data as SectionExercise[];
   }
 
   static async createSectionExercise(
@@ -405,7 +401,7 @@ export class WorkoutService {
         if (dayError) throw dayError;
 
         // Create sections for the new day
-        for (const sourceSection of sourceDay.day_sections || []) {
+        for (const sourceSection of (sourceDay as any).day_sections || []) {
           const { data: newSection, error: sectionError } = await (
             supabase as any
           )
