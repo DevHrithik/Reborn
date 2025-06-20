@@ -30,14 +30,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ComponentLoading, TableLoading } from '@/components/shared/loading';
+import { TableLoading } from '@/components/shared/loading';
 import { userService, User, UserFilters } from '@/lib/data/users';
 import {
   Search,
-  Filter,
   Download,
-  UserPlus,
-  MoreHorizontal,
   Eye,
   UserCheck,
   UserX,
@@ -45,14 +42,8 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
-  Calendar,
-  MapPin,
   Activity,
   TrendingUp,
-  TrendingDown,
-  AlertCircle,
-  CheckCircle,
-  Clock,
 } from 'lucide-react';
 
 export default function UsersPage() {
@@ -238,7 +229,7 @@ export default function UsersPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50 min-h-screen">
+    <div className="p-6 space-y-6 bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -254,10 +245,10 @@ export default function UsersPage() {
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
-          <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
+          {/* <Button className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
             <UserPlus className="h-4 w-4 mr-2" />
             Add User
-          </Button>
+          </Button> */}
         </div>
       </div>
 

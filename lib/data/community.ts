@@ -7,22 +7,58 @@ import type { Database } from '@/lib/types/database';
 export interface CommunityPost {
   id: number;
   user_id: string;
+  title: string;
   content: string;
-  post_type: Database['public']['Enums']['post_type'];
-  image_url?: string | null;
+  status: 'published' | 'draft' | 'archived' | 'flagged';
+  category: 'General' | 'Workouts' | 'Nutrition' | 'Support';
+  tags: string[];
+  likes_count: number;
+  comments_count: number;
+  is_pinned: boolean;
   created_at: string;
   updated_at: string;
-  // Joined data
+  // Additional properties used by the dashboard
+  post_type?: string;
+  image_url?: string | null;
+  moderation_status?: 'pending' | 'approved' | 'rejected';
+  is_flagged?: boolean;
   user?: {
     id: string;
     full_name: string | null;
-    email: string;
+    avatar_url: string | null;
+    email?: string;
+  };
+}
+
+export interface Comment {
+  id: number;
+  post_id: number;
+  user_id: string;
+  content: string;
+  parent_comment_id: number | null;
+  status: 'published' | 'hidden' | 'flagged';
+  likes_count: number;
+  created_at: string;
+  updated_at: string;
+  user?: {
+    id: string;
+    full_name: string | null;
     avatar_url: string | null;
   };
-  likes_count: number;
-  comments_count: number;
-  moderation_status?: 'pending' | 'approved' | 'rejected';
-  is_flagged?: boolean;
+  replies?: Comment[];
+}
+
+export interface Report {
+  id: number;
+  post_id: number | null;
+  comment_id: number | null;
+  reporter_user_id: string;
+  reason: 'spam' | 'inappropriate' | 'harassment' | 'misinformation' | 'other';
+  description: string | null;
+  status: 'pending' | 'resolved' | 'dismissed';
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
 }
 
 export interface CommunityComment {
@@ -54,18 +90,23 @@ export interface ModerationAction {
 
 export interface CommunityStats {
   totalPosts: number;
-  pendingModeration: number;
-  flaggedContent: number;
   postsToday: number;
-  engagementMetrics: {
+  totalComments: number;
+  commentsToday: number;
+  pendingReports: number;
+  activeUsers: number;
+  // Optional fields for backward compatibility
+  pendingModeration?: number;
+  flaggedContent?: number;
+  engagementMetrics?: {
     averageLikes: number;
     averageComments: number;
   };
-  postsByType: Array<{
+  postsByType?: Array<{
     type: string;
     count: number;
   }>;
-  moderationStats: {
+  moderationStats?: {
     approvedToday: number;
     rejectedToday: number;
     autoApproved: number;
@@ -80,8 +121,313 @@ export interface PostFilters {
   search?: string;
 }
 
+const supabase = createClient();
+
 export class CommunityService {
-  private static supabase = createClient();
+  static async getPosts(
+    page: number = 1,
+    limit: number = 20,
+    status?: string,
+    category?: string
+  ): Promise<{ posts: CommunityPost[]; total: number }> {
+    let query = (supabase as any)
+      .from('community_posts')
+      .select(
+        `
+        *,
+        user:users!inner(
+          id,
+          full_name,
+          avatar_url
+        )
+      `,
+        { count: 'exact' }
+      )
+      .order('created_at', { ascending: false })
+      .range((page - 1) * limit, page * limit - 1);
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    if (category) {
+      query = query.eq('category', category);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) throw error;
+
+    return {
+      posts: (data || []) as CommunityPost[],
+      total: count || 0,
+    };
+  }
+
+  static async getPost(id: number): Promise<CommunityPost | null> {
+    const { data, error } = await (supabase as any)
+      .from('community_posts')
+      .select(
+        `
+        *,
+        user:users!inner(
+          id,
+          full_name,
+          avatar_url
+        )
+      `
+      )
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') return null;
+      throw error;
+    }
+
+    return data as CommunityPost;
+  }
+
+  static async updatePostStatus(
+    id: number,
+    status: CommunityPost['status']
+  ): Promise<void> {
+    const { error } = await (supabase as any)
+      .from('community_posts')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+  }
+
+  static async deletePost(id: number): Promise<void> {
+    const { error } = await (supabase as any)
+      .from('community_posts')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  }
+
+  static async getComments(
+    postId: number,
+    page: number = 1,
+    limit: number = 50
+  ): Promise<{ comments: Comment[]; total: number }> {
+    const { data, error, count } = await (supabase as any)
+      .from('comments')
+      .select(
+        `
+        *,
+        user:users!inner(
+          id,
+          full_name,
+          avatar_url
+        )
+      `,
+        { count: 'exact' }
+      )
+      .eq('post_id', postId)
+      .is('parent_comment_id', null)
+      .order('created_at', { ascending: false })
+      .range((page - 1) * limit, page * limit - 1);
+
+    if (error) throw error;
+
+    // Get replies for each comment
+    const comments = data || [];
+    const commentsWithReplies = await Promise.all(
+      comments.map(async (comment: Comment) => {
+        const { data: replies } = await (supabase as any)
+          .from('comments')
+          .select(
+            `
+            *,
+            user:users!inner(
+              id,
+              full_name,
+              avatar_url
+            )
+          `
+          )
+          .eq('parent_comment_id', comment.id)
+          .order('created_at', { ascending: true });
+
+        return {
+          ...comment,
+          replies: replies || [],
+        };
+      })
+    );
+
+    return {
+      comments: commentsWithReplies as Comment[],
+      total: count || 0,
+    };
+  }
+
+  static async updateCommentStatus(
+    id: number,
+    status: Comment['status']
+  ): Promise<void> {
+    const { error } = await (supabase as any)
+      .from('comments')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+  }
+
+  static async deleteComment(id: number): Promise<void> {
+    const { error } = await (supabase as any)
+      .from('comments')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  }
+
+  static async getReports(
+    page: number = 1,
+    limit: number = 20,
+    status?: string
+  ): Promise<{ reports: Report[]; total: number }> {
+    let query = (supabase as any)
+      .from('reports')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range((page - 1) * limit, page * limit - 1);
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) throw error;
+
+    return {
+      reports: (data || []) as Report[],
+      total: count || 0,
+    };
+  }
+
+  static async updateReportStatus(
+    id: number,
+    status: Report['status'],
+    resolvedBy?: string
+  ): Promise<void> {
+    const updateData: any = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (status === 'resolved') {
+      updateData.resolved_at = new Date().toISOString();
+      if (resolvedBy) {
+        updateData.resolved_by = resolvedBy;
+      }
+    }
+
+    const { error } = await (supabase as any)
+      .from('reports')
+      .update(updateData)
+      .eq('id', id);
+
+    if (error) throw error;
+  }
+
+  // Analytics
+  static async getCommunityStats(): Promise<{
+    totalPosts: number;
+    postsToday: number;
+    totalComments: number;
+    commentsToday: number;
+    pendingReports: number;
+    activeUsers: number;
+  }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayISO = today.toISOString();
+
+    const [postsCount, commentsCount, reportsCount] = await Promise.all([
+      (supabase as any)
+        .from('community_posts')
+        .select('*', { count: 'exact', head: true }),
+      (supabase as any)
+        .from('comments')
+        .select('*', { count: 'exact', head: true }),
+      (supabase as any)
+        .from('reports')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending'),
+    ]);
+
+    const [postsTodayCount, commentsTodayCount] = await Promise.all([
+      (supabase as any)
+        .from('community_posts')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', todayISO),
+      (supabase as any)
+        .from('comments')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', todayISO),
+    ]);
+
+    // Get active users (users who posted or commented in the last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+
+    const { data: activeUsersData } = await (supabase as any)
+      .from('community_posts')
+      .select('user_id')
+      .gte('created_at', sevenDaysAgoISO);
+
+    const { data: activeCommentersData } = await (supabase as any)
+      .from('comments')
+      .select('user_id')
+      .gte('created_at', sevenDaysAgoISO);
+
+    const activeUserIds = new Set([
+      ...(activeUsersData || []).map((p: any) => p.user_id),
+      ...(activeCommentersData || []).map((c: any) => c.user_id),
+    ]);
+
+    return {
+      totalPosts: postsCount.count || 0,
+      postsToday: postsTodayCount.count || 0,
+      totalComments: commentsCount.count || 0,
+      commentsToday: commentsTodayCount.count || 0,
+      pendingReports: reportsCount.count || 0,
+      activeUsers: activeUserIds.size,
+    };
+  }
+
+  static async getMostActiveUsers(limit: number = 10): Promise<
+    Array<{
+      user_id: string;
+      full_name: string | null;
+      posts_count: number;
+      comments_count: number;
+      total_activity: number;
+    }>
+  > {
+    // This would require a more complex query in a real implementation
+    // For now, we'll return mock data
+    return [];
+  }
+
+  static async getPopularTags(limit: number = 20): Promise<
+    Array<{
+      tag: string;
+      count: number;
+    }>
+  > {
+    // This would require extracting and counting tags from posts
+    // For now, we'll return mock data
+    return [];
+  }
 
   static async getAllPosts(
     limit: number = 20,
@@ -89,15 +435,14 @@ export class CommunityService {
     filters?: PostFilters
   ): Promise<CommunityPost[]> {
     try {
-      let query = this.supabase
+      let query = (supabase as any)
         .from('community_posts')
         .select(
           `
           *,
-          user:users!community_posts_user_id_fkey (
+          user:users!inner(
             id,
             full_name,
-            email,
             avatar_url
           )
         `
@@ -125,7 +470,7 @@ export class CommunityService {
 
       // Get likes and comments counts
       const postsWithCounts = await Promise.all(
-        posts.map(async post => {
+        posts.map(async (post: any) => {
           const [likesCount, commentsCount, moderationStatus] =
             await Promise.all([
               this.getPostLikesCount(post.id),
@@ -153,15 +498,14 @@ export class CommunityService {
 
   static async getPostById(postId: number): Promise<CommunityPost | null> {
     try {
-      const { data: post, error } = await this.supabase
+      const { data: post, error } = await (supabase as any)
         .from('community_posts')
         .select(
           `
           *,
-          user:users!community_posts_user_id_fkey (
+          user:users!inner(
             id,
             full_name,
-            email,
             avatar_url
           )
         `
@@ -198,15 +542,14 @@ export class CommunityService {
 
   static async getPostComments(postId: number): Promise<CommunityComment[]> {
     try {
-      const { data: comments, error } = await this.supabase
-        .from('community_comments')
+      const { data: comments, error } = await (supabase as any)
+        .from('comments')
         .select(
           `
           *,
-          user:users!community_comments_user_id_fkey (
+          user:users!inner(
             id,
             full_name,
-            email,
             avatar_url
           )
         `
@@ -219,7 +562,7 @@ export class CommunityService {
         throw error;
       }
 
-      return (comments || []).map(comment => ({
+      return (comments || []).map((comment: any) => ({
         ...comment,
         user: Array.isArray(comment.user) ? comment.user[0] : comment.user,
       })) as CommunityComment[];
@@ -231,7 +574,7 @@ export class CommunityService {
 
   private static async getPostLikesCount(postId: number): Promise<number> {
     try {
-      const { count, error } = await this.supabase
+      const { count, error } = await (supabase as any)
         .from('community_likes')
         .select('*', { count: 'exact', head: true })
         .eq('post_id', postId);
@@ -250,8 +593,8 @@ export class CommunityService {
 
   private static async getPostCommentsCount(postId: number): Promise<number> {
     try {
-      const { count, error } = await this.supabase
-        .from('community_comments')
+      const { count, error } = await (supabase as any)
+        .from('comments')
         .select('*', { count: 'exact', head: true })
         .eq('post_id', postId);
 
@@ -271,7 +614,7 @@ export class CommunityService {
     postId: number
   ): Promise<ModerationAction | null> {
     try {
-      const { data: moderation, error } = await this.supabase
+      const { data: moderation, error } = await (supabase as any)
         .from('content_moderation')
         .select('*')
         .eq('content_type', 'post')
@@ -308,7 +651,7 @@ export class CommunityService {
 
       if (action === 'delete') {
         // Delete the post
-        const { error } = await this.supabase
+        const { error } = await (supabase as any)
           .from('community_posts')
           .delete()
           .eq('id', postId);
@@ -334,7 +677,7 @@ export class CommunityService {
 
         console.log('Inserting moderation record:', moderationRecord);
 
-        const { error } = await this.supabase
+        const { error } = await (supabase as any)
           .from('content_moderation')
           .upsert(moderationRecord);
 
@@ -396,7 +739,7 @@ export class CommunityService {
 
       console.log('Bulk moderation records:', moderationRecords);
 
-      const { error } = await this.supabase
+      const { error } = await (supabase as any)
         .from('content_moderation')
         .upsert(moderationRecords);
 
@@ -433,110 +776,6 @@ export class CommunityService {
     }
   }
 
-  static async getCommunityStats(): Promise<CommunityStats> {
-    try {
-      const [
-        totalPostsCount,
-        pendingModerationCount,
-        flaggedContentCount,
-        postsTodayCount,
-        postsTypeStats,
-      ] = await Promise.all([
-        this.getTotalPostsCount(),
-        this.getPendingModerationCount(),
-        this.getFlaggedContentCount(),
-        this.getPostsTodayCount(),
-        this.getPostsByTypeStats(),
-      ]);
-
-      // Calculate average engagement
-      const averageEngagement = await this.getAverageEngagement();
-
-      return {
-        totalPosts: totalPostsCount,
-        pendingModeration: pendingModerationCount,
-        flaggedContent: flaggedContentCount,
-        postsToday: postsTodayCount,
-        engagementMetrics: averageEngagement,
-        postsByType: postsTypeStats,
-        moderationStats: {
-          approvedToday: 0, // TODO: Implement
-          rejectedToday: 0, // TODO: Implement
-          autoApproved: 0, // TODO: Implement
-          responseTime: 25, // TODO: Implement
-        },
-      };
-    } catch (error) {
-      console.error('Error in getCommunityStats:', error);
-      throw error;
-    }
-  }
-
-  private static async getTotalPostsCount(): Promise<number> {
-    const { count } = await this.supabase
-      .from('community_posts')
-      .select('*', { count: 'exact', head: true });
-    return count || 0;
-  }
-
-  private static async getPendingModerationCount(): Promise<number> {
-    const { count } = await this.supabase
-      .from('content_moderation')
-      .select('*', { count: 'exact', head: true })
-      .eq('content_type', 'post')
-      .eq('status', 'pending');
-    return count || 0;
-  }
-
-  private static async getFlaggedContentCount(): Promise<number> {
-    const { count } = await this.supabase
-      .from('content_moderation')
-      .select('*', { count: 'exact', head: true })
-      .eq('content_type', 'post')
-      .eq('status', 'pending');
-    return count || 0;
-  }
-
-  private static async getPostsTodayCount(): Promise<number> {
-    const today = new Date().toISOString().split('T')[0];
-    const { count } = await this.supabase
-      .from('community_posts')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', `${today}T00:00:00.000Z`)
-      .lte('created_at', `${today}T23:59:59.999Z`);
-    return count || 0;
-  }
-
-  private static async getPostsByTypeStats(): Promise<
-    Array<{ type: string; count: number }>
-  > {
-    const { data } = await this.supabase
-      .from('community_posts')
-      .select('post_type')
-      .order('post_type');
-
-    if (!data) return [];
-
-    const typeStats: Record<string, number> = {};
-    data.forEach(post => {
-      typeStats[post.post_type] = (typeStats[post.post_type] || 0) + 1;
-    });
-
-    return Object.entries(typeStats).map(([type, count]) => ({ type, count }));
-  }
-
-  private static async getAverageEngagement(): Promise<{
-    averageLikes: number;
-    averageComments: number;
-  }> {
-    // This would require a more complex query to calculate averages
-    // For now, return mock data
-    return {
-      averageLikes: 18,
-      averageComments: 6,
-    };
-  }
-
   private static async logAdminActivity(
     adminId: string,
     action: string,
@@ -545,14 +784,16 @@ export class CommunityService {
     details: any
   ): Promise<void> {
     try {
-      const { error } = await this.supabase.from('admin_activity_logs').insert({
-        admin_id: adminId,
-        action,
-        resource_type: resourceType,
-        resource_id: resourceId,
-        details,
-        created_at: new Date().toISOString(),
-      });
+      const { error } = await (supabase as any)
+        .from('admin_activity_logs')
+        .insert({
+          admin_id: adminId,
+          action,
+          resource_type: resourceType,
+          resource_id: resourceId,
+          details,
+          created_at: new Date().toISOString(),
+        });
 
       if (error) {
         console.error('Error logging admin activity:', error);
@@ -564,12 +805,12 @@ export class CommunityService {
 
   // Real-time subscriptions
   static subscribeToNewPosts(callback: (post: CommunityPost) => void) {
-    return this.supabase
+    return (supabase as any)
       .channel('new-posts')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'community_posts' },
-        async payload => {
+        async (payload: any) => {
           const post = await this.getPostById(payload.new.id);
           if (post) {
             callback(post);
@@ -582,12 +823,12 @@ export class CommunityService {
   static subscribeToFlaggedContent(
     callback: (moderation: ModerationAction) => void
   ) {
-    return this.supabase
+    return (supabase as any)
       .channel('flagged-content')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'content_moderation' },
-        payload => {
+        (payload: any) => {
           if (payload.new.status === 'pending') {
             callback(payload.new as ModerationAction);
           }

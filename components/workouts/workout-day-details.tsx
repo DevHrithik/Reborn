@@ -94,14 +94,13 @@ export function WorkoutDayDetails({
       // Load exercises for each section
       const exercisesData: Record<string, SectionExercise[]> = {};
       for (const section of sectionsData) {
-        exercisesData[section.id] = await WorkoutService.getSectionExercises(
-          section.id
-        );
+        exercisesData[section.id.toString()] =
+          await WorkoutService.getSectionExercises(section.id);
       }
       setSectionExercises(exercisesData);
 
       // Expand all sections by default
-      setExpandedSections(new Set(sectionsData.map(s => s.id)));
+      setExpandedSections(new Set(sectionsData.map(s => s.id.toString())));
     } catch (error) {
       console.error('Error loading sections:', error);
       toast.error('Failed to load workout sections');
@@ -187,9 +186,11 @@ export function WorkoutDayDetails({
     } catch (error) {
       console.error('Error adding exercise:', error);
       console.error('Error details:', JSON.stringify(error, null, 2));
-      toast.error(
-        `Failed to add exercise: ${error?.message || 'Unknown error'}`
-      );
+      const errorMessage =
+        error && typeof error === 'object' && 'message' in error
+          ? (error as { message: string }).message
+          : 'Unknown error';
+      toast.error(`Failed to add exercise: ${errorMessage}`);
     }
   };
 
@@ -216,7 +217,7 @@ export function WorkoutDayDetails({
   const handlePreviewExercise = (exercise: SectionExercise) => {
     // Find alternatives for this exercise
     const alternatives =
-      sectionExercises[exercise.day_section_id]?.filter(
+      sectionExercises[exercise.day_section_id.toString()]?.filter(
         alt => alt.parent_section_exercise_id === exercise.id
       ) || [];
 
@@ -432,19 +433,25 @@ export function WorkoutDayDetails({
           {sections.length > 0 ? (
             <div className="space-y-4">
               {sections
-                .sort((a, b) => a.order_index - b.order_index)
+                .sort(
+                  (a, b) =>
+                    (a.order_index || a.section_order) -
+                    (b.order_index || b.section_order)
+                )
                 .map(section => (
                   <Card key={section.id} className="border-0 shadow-sm">
                     <Collapsible
-                      open={expandedSections.has(section.id)}
-                      onOpenChange={() => toggleSection(section.id)}
+                      open={expandedSections.has(section.id.toString())}
+                      onOpenChange={() => toggleSection(section.id.toString())}
                     >
                       <CollapsibleTrigger asChild>
                         <CardHeader className="cursor-pointer hover:bg-gray-50 transition-colors pb-4">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-4">
                               <div className="text-2xl">
-                                {getSectionIcon(section.section_type)}
+                                {getSectionIcon(
+                                  section.section_type || section.name
+                                )}
                               </div>
                               <div className="flex-1">
                                 <div className="flex items-center gap-3 mb-2">
@@ -454,16 +461,18 @@ export function WorkoutDayDetails({
                                   <Badge
                                     variant="outline"
                                     className={getSectionColor(
-                                      section.section_type
+                                      section.section_type || section.name
                                     )}
                                   >
-                                    {section.section_type}
+                                    {section.section_type || section.name}
                                   </Badge>
                                   <Badge
                                     variant="secondary"
                                     className="bg-gray-100 text-gray-700"
                                   >
-                                    {sectionExercises[section.id]?.filter(
+                                    {sectionExercises[
+                                      section.id.toString()
+                                    ]?.filter(
                                       ex => !ex.parent_section_exercise_id
                                     )?.length || 0}{' '}
                                     exercises
@@ -512,7 +521,7 @@ export function WorkoutDayDetails({
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
-                              {expandedSections.has(section.id) ? (
+                              {expandedSections.has(section.id.toString()) ? (
                                 <ChevronUp className="h-5 w-5 text-gray-400" />
                               ) : (
                                 <ChevronDown className="h-5 w-5 text-gray-400" />
@@ -524,10 +533,10 @@ export function WorkoutDayDetails({
 
                       <CollapsibleContent>
                         <CardContent className="pt-0">
-                          {sectionExercises[section.id] &&
-                          sectionExercises[section.id].length > 0 ? (
+                          {sectionExercises[section.id.toString()] &&
+                          sectionExercises[section.id.toString()].length > 0 ? (
                             <div className="space-y-3">
-                              {sectionExercises[section.id]
+                              {sectionExercises[section.id.toString()]
                                 .filter(
                                   exercise =>
                                     !exercise.parent_section_exercise_id
@@ -535,7 +544,7 @@ export function WorkoutDayDetails({
                                 .map((exercise, index) => {
                                   // Find alternatives for this main exercise
                                   const alternatives = sectionExercises[
-                                    section.id
+                                    section.id.toString()
                                   ].filter(
                                     alt =>
                                       alt.parent_section_exercise_id ===
@@ -816,9 +825,18 @@ export function WorkoutDayDetails({
           {selectedSectionForExercise && (
             <ExerciseForm
               onSubmit={handleAddExercise}
+              onRefresh={() => {
+                loadSections();
+                setIsAddExerciseDialogOpen(false);
+                setSelectedSectionForExercise(null);
+              }}
+              onClose={() => {
+                setIsAddExerciseDialogOpen(false);
+                setSelectedSectionForExercise(null);
+              }}
               sectionId={selectedSectionForExercise.id}
               existingExercises={
-                sectionExercises[selectedSectionForExercise.id] || []
+                sectionExercises[selectedSectionForExercise.id.toString()] || []
               }
             />
           )}
@@ -840,9 +858,19 @@ export function WorkoutDayDetails({
           {editingExercise && (
             <ExerciseForm
               onSubmit={handleUpdateExercise}
+              onRefresh={() => {
+                loadSections();
+                setIsEditExerciseDialogOpen(false);
+                setEditingExercise(null);
+              }}
+              onClose={() => {
+                setIsEditExerciseDialogOpen(false);
+                setEditingExercise(null);
+              }}
               sectionId={editingExercise.day_section_id}
               existingExercises={
-                sectionExercises[editingExercise.day_section_id] || []
+                sectionExercises[editingExercise.day_section_id.toString()] ||
+                []
               }
               initialData={editingExercise}
             />

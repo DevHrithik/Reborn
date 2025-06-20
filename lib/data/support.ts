@@ -299,14 +299,18 @@ export class SupportService {
     ticket: Partial<SupportTicket>
   ): Promise<SupportTicket> {
     try {
+      if (!ticket.user_id) {
+        throw new Error('user_id is required');
+      }
+
       const { data, error } = await supabase
         .from('support_chat_sessions')
         .insert({
           user_id: ticket.user_id,
-          subject: ticket.title,
+          subject: ticket.title || 'Support Request',
           status: ticket.status || 'open',
           priority: ticket.priority || 'medium',
-          assigned_agent_id: ticket.assigned_to,
+          assigned_agent_id: ticket.assigned_to || null,
         })
         .select()
         .single();
@@ -477,6 +481,10 @@ export class SupportService {
     message: Partial<SupportMessage>
   ): Promise<SupportMessage> {
     try {
+      if (!message.content) {
+        throw new Error('message content is required');
+      }
+
       const { data, error } = await supabase
         .from('support_chat_messages')
         .insert({
@@ -484,7 +492,7 @@ export class SupportService {
           sender_id: senderId,
           message_text: message.content,
           is_agent_message: senderType === 'agent',
-          attachments: message.attachments,
+          attachments: message.attachments || null,
         })
         .select()
         .single();

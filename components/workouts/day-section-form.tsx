@@ -74,9 +74,12 @@ export function DaySectionForm({
       await onSubmit({
         workout_day_id: initialData?.workout_day_id || 0,
         name: data.name,
+        section_type: data.name,
         section_order: data.section_order,
+        order_index: data.section_order,
         rounds: data.rounds,
         rest_between_rounds_seconds: data.rest_between_rounds_seconds || null,
+        description: null,
       });
     } finally {
       setLoading(false);

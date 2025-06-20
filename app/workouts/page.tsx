@@ -4,25 +4,22 @@ import { useState, useEffect } from 'react';
 import {
   Plus,
   Search,
-  Filter,
   Grid3X3,
   List,
   Dumbbell,
   Users,
   Target,
   Calendar,
-  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs,TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
@@ -223,7 +220,7 @@ export default function WorkoutsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/50">
+    <div className="bg-gray-50/50">
       <div className="max-w-7xl mx-auto p-6 space-y-8">
         {/* Header Section */}
         <div className="bg-white rounded-xl border shadow-sm p-6">

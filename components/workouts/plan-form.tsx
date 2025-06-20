@@ -60,7 +60,12 @@ export function PlanForm({ initialData, onSubmit }: PlanFormProps) {
   const handleFormSubmit = async (data: PlanFormData) => {
     setLoading(true);
     try {
-      await onSubmit(data);
+      // Convert form data to Plan format
+      const planData = {
+        ...data,
+        description: data.description || null,
+      };
+      await onSubmit(planData);
     } finally {
       setLoading(false);
     }

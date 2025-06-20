@@ -12,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Card,
   CardContent,
@@ -20,19 +19,23 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Plus, Trash2, Search, PlayCircle, ImageIcon } from 'lucide-react';
+import { Plus, Trash2, Search, PlayCircle, ImageIcon, Zap } from 'lucide-react';
 import {
   SectionExercise,
   Exercise,
   Equipment,
   WorkoutService,
 } from '@/lib/data/workouts';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { createClient } from '@/lib/supabase/client';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
 
-const exerciseFormSchema = z.object({
+const supabase = createClient();
+
+// Simplified schema for main exercise only
+const mainExerciseSchema = z.object({
   exercise_id: z.number().min(1, 'Please select an exercise'),
   exercise_order: z.number().min(1, 'Exercise order must be at least 1'),
   equipment_id: z.number().optional(),
@@ -41,55 +44,67 @@ const exerciseFormSchema = z.object({
   sets: z.number().min(1).optional(),
   rest_time_seconds: z.number().min(0).optional(),
   notes: z.string().optional(),
-  alternatives: z
-    .array(
-      z.object({
-        exercise_id: z.number().min(1, 'Please select an exercise').optional(),
-        equipment_id: z.number().optional(),
-        reps: z.string().optional(),
-        duration_seconds: z.number().min(0).optional(),
-        sets: z.number().min(1).optional(),
-        rest_time_seconds: z.number().min(0).optional(),
-        notes: z.string().optional(),
-      })
-    )
-    .optional(),
 });
 
-type ExerciseFormData = z.infer<typeof exerciseFormSchema>;
+// Schema for alternative exercises
+const alternativeExerciseSchema = z.object({
+  exercise_id: z.number().min(1, 'Please select an exercise'),
+  equipment_id: z.number().optional(),
+  reps: z.string().optional(),
+  duration_seconds: z.number().min(0).optional(),
+  sets: z.number().min(1).optional(),
+  rest_time_seconds: z.number().min(0).optional(),
+  notes: z.string().optional(),
+});
+
+type MainExerciseData = z.infer<typeof mainExerciseSchema>;
+type AlternativeExerciseData = z.infer<typeof alternativeExerciseSchema>;
 
 interface ExerciseFormProps {
   onSubmit: (data: Omit<SectionExercise, 'id' | 'created_at'>) => void;
+  onRefresh?: () => void; // Add refresh callback for when we create exercises internally
   sectionId: number;
   existingExercises: any[];
   initialData?: SectionExercise;
+  onClose?: () => void;
 }
 
 export function ExerciseForm({
   onSubmit,
+  onRefresh,
   sectionId,
   existingExercises,
   initialData,
+  onClose,
 }: ExerciseFormProps) {
   const [loading, setLoading] = useState(false);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Main exercise state
+  const [mainExerciseId, setMainExerciseId] = useState<number | null>(
+    initialData?.id || null
+  );
+  const [isMainExerciseSaved, setIsMainExerciseSaved] = useState(!!initialData);
+
+  // Alternative exercises state
+  const [alternatives, setAlternatives] = useState<
+    (SectionExercise & { exercise: Exercise })[]
+  >([]);
+  const [showAlternativeForm, setShowAlternativeForm] = useState(false);
+  const [alternativeLoading, setAlternativeLoading] = useState(false);
+
+  // Creation forms
   const [showCreateExercise, setShowCreateExercise] = useState(false);
   const [newExerciseName, setNewExerciseName] = useState('');
   const [newExerciseDescription, setNewExerciseDescription] = useState('');
   const [showCreateEquipment, setShowCreateEquipment] = useState(false);
   const [newEquipmentName, setNewEquipmentName] = useState('');
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    setValue,
-    watch,
-    control,
-  } = useForm<ExerciseFormData>({
-    resolver: zodResolver(exerciseFormSchema),
+  // Main exercise form
+  const mainForm = useForm<MainExerciseData>({
+    resolver: zodResolver(mainExerciseSchema),
     defaultValues: initialData
       ? {
           exercise_id: initialData.exercise_id,
@@ -100,7 +115,6 @@ export function ExerciseForm({
           duration_seconds: initialData.duration_seconds || 0,
           rest_time_seconds: initialData.rest_time_seconds || 0,
           notes: initialData.notes || '',
-          alternatives: [],
         }
       : {
           exercise_order:
@@ -108,22 +122,25 @@ export function ExerciseForm({
           sets: 1,
           rest_time_seconds: 0,
           duration_seconds: 0,
-          alternatives: [],
         },
   });
 
-  const {
-    fields: alternatives,
-    append: addAlternative,
-    remove: removeAlternative,
-  } = useFieldArray({
-    control,
-    name: 'alternatives',
+  // Alternative exercise form
+  const altForm = useForm<AlternativeExerciseData>({
+    resolver: zodResolver(alternativeExerciseSchema),
+    defaultValues: {
+      sets: 1,
+      rest_time_seconds: 0,
+      duration_seconds: 0,
+    },
   });
 
   useEffect(() => {
     loadExercises();
     loadEquipment();
+    if (initialData) {
+      loadAlternatives();
+    }
   }, []);
 
   const loadExercises = async () => {
@@ -146,6 +163,27 @@ export function ExerciseForm({
     }
   };
 
+  const loadAlternatives = async () => {
+    if (!mainExerciseId) return;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from('section_exercises')
+        .select(
+          `
+          *,
+          exercise:exercises(*)
+        `
+        )
+        .eq('parent_section_exercise_id', mainExerciseId);
+
+      if (error) throw error;
+      setAlternatives(data || []);
+    } catch (error) {
+      console.error('Error loading alternatives:', error);
+    }
+  };
+
   const handleCreateNewExercise = async () => {
     if (!newExerciseName.trim()) {
       toast.error('Exercise name is required');
@@ -161,7 +199,7 @@ export function ExerciseForm({
       });
 
       setExercises(prev => [...prev, newExercise]);
-      setValue('exercise_id', newExercise.id);
+      mainForm.setValue('exercise_id', newExercise.id);
       setShowCreateExercise(false);
       setNewExerciseName('');
       setNewExerciseDescription('');
@@ -184,7 +222,6 @@ export function ExerciseForm({
       });
 
       setEquipment(prev => [...prev, newEquipment]);
-      setValue('equipment_id', newEquipment.id);
       setShowCreateEquipment(false);
       setNewEquipmentName('');
       toast.success('Equipment created successfully');
@@ -194,19 +231,11 @@ export function ExerciseForm({
     }
   };
 
-  const handleFormSubmit = async (data: ExerciseFormData) => {
+  const handleMainExerciseSubmit = async (data: MainExerciseData) => {
     setLoading(true);
 
-    // Check if we have alternatives to create
-    const hasAlternatives = data.alternatives && data.alternatives.length > 0;
-
-    console.log('Form submission data:', data);
-    console.log('Has alternatives:', hasAlternatives);
-    console.log('Alternatives:', data.alternatives);
-
     try {
-      // Create the main exercise first
-      const mainExerciseData = {
+      const exerciseData = {
         day_section_id: sectionId,
         exercise_id: data.exercise_id,
         parent_section_exercise_id: null,
@@ -219,91 +248,91 @@ export function ExerciseForm({
         notes: data.notes || null,
       };
 
-      let createdMainExercise: any = null;
-
       if (initialData) {
-        // Editing existing exercise - use the normal onSubmit callback
-        await onSubmit(mainExerciseData);
-        createdMainExercise = { id: initialData.id }; // Use existing ID for alternatives
-      } else {
-        // Creating new exercise
-        if (hasAlternatives) {
-          // If we have alternatives, create directly to get the ID
-          createdMainExercise =
-            await WorkoutService.createSectionExercise(mainExerciseData);
-          console.log(
-            'Main exercise created with ID:',
-            createdMainExercise?.id
-          );
-        } else {
-          // No alternatives, use normal onSubmit callback
-          await onSubmit(mainExerciseData);
-        }
-      }
-
-      // Create alternative exercises if any exist
-      if (hasAlternatives && createdMainExercise && data.alternatives) {
-        console.log(
-          'Creating alternatives for main exercise ID:',
-          createdMainExercise.id
+        // Update existing exercise
+        await WorkoutService.updateSectionExercise(
+          initialData.id,
+          exerciseData
         );
-        for (let i = 0; i < data.alternatives.length; i++) {
-          const alt = data.alternatives[i];
-          console.log(`Alternative ${i + 1}:`, alt);
-          if (alt.exercise_id && alt.exercise_id > 0) {
-            const altData = {
-              day_section_id: sectionId,
-              exercise_id: alt.exercise_id,
-              parent_section_exercise_id: createdMainExercise.id,
-              exercise_order: i + 1, // Alternative exercise order
-              equipment_id: alt.equipment_id || null,
-              reps: alt.reps || null,
-              duration_seconds: alt.duration_seconds || null,
-              sets: alt.sets || null,
-              rest_time_seconds: alt.rest_time_seconds || null,
-              notes: alt.notes || null,
-            };
-            console.log('Creating alternative with data:', altData);
-            await WorkoutService.createSectionExercise(altData);
-            console.log('Alternative created successfully');
-          } else {
-            console.log(`Skipping alternative ${i + 1} - no valid exercise_id`);
-          }
+        toast.success('Exercise updated successfully');
+        // Call parent to refresh data for updates
+        onSubmit(exerciseData);
+      } else {
+        // Create new exercise
+        const created =
+          await WorkoutService.createSectionExercise(exerciseData);
+        setMainExerciseId(created.id);
+        setIsMainExerciseSaved(true);
+        toast.success(
+          'Exercise created successfully! You can now add alternatives.'
+        );
+
+        // For new exercises, call refresh callback instead of onSubmit to avoid duplicate creation
+        if (onRefresh) {
+          onRefresh();
         }
       }
-
-      // For new exercises with alternatives, we need to call the callback to refresh the UI
-      if (!initialData && hasAlternatives) {
-        // Call the onSubmit callback to refresh the parent component
-        // Note: We pass a dummy data as the main exercise was already created
-        onSubmit({
-          day_section_id: sectionId,
-          exercise_id: data.exercise_id,
-          parent_section_exercise_id: null,
-          exercise_order: data.exercise_order,
-          equipment_id: data.equipment_id || null,
-          reps: data.reps || null,
-          duration_seconds: data.duration_seconds || null,
-          sets: data.sets || null,
-          rest_time_seconds: data.rest_time_seconds || null,
-          notes: data.notes || null,
-        });
-      }
-
-      toast.success(
-        initialData
-          ? hasAlternatives
-            ? 'Exercise and alternatives updated successfully'
-            : 'Exercise updated successfully'
-          : hasAlternatives
-            ? 'Exercise and alternatives created successfully'
-            : 'Exercise created successfully'
-      );
     } catch (error) {
-      console.error('Error submitting exercise:', error);
+      console.error('Error saving exercise:', error);
       toast.error('Failed to save exercise');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddAlternative = async (data: AlternativeExerciseData) => {
+    if (!mainExerciseId) {
+      toast.error('Please save the main exercise first');
+      return;
+    }
+
+    setAlternativeLoading(true);
+
+    try {
+      const altData = {
+        day_section_id: sectionId,
+        exercise_id: data.exercise_id,
+        parent_section_exercise_id: mainExerciseId,
+        exercise_order: alternatives.length + 1,
+        equipment_id: data.equipment_id || null,
+        reps: data.reps || null,
+        duration_seconds: data.duration_seconds || null,
+        sets: data.sets || null,
+        rest_time_seconds: data.rest_time_seconds || null,
+        notes: data.notes || null,
+      };
+
+      const created = await WorkoutService.createSectionExercise(altData);
+
+      // Get the exercise details
+      const exercise = exercises.find(e => e.id === data.exercise_id);
+      if (exercise) {
+        setAlternatives(prev => [...prev, { ...created, exercise }]);
+      }
+
+      altForm.reset({
+        sets: 1,
+        rest_time_seconds: 0,
+        duration_seconds: 0,
+      });
+      setShowAlternativeForm(false);
+      toast.success('Alternative exercise added successfully');
+    } catch (error) {
+      console.error('Error adding alternative:', error);
+      toast.error('Failed to add alternative exercise');
+    } finally {
+      setAlternativeLoading(false);
+    }
+  };
+
+  const handleDeleteAlternative = async (altId: number) => {
+    try {
+      await WorkoutService.deleteSectionExercise(altId);
+      setAlternatives(prev => prev.filter(alt => alt.id !== altId));
+      toast.success('Alternative exercise deleted');
+    } catch (error) {
+      console.error('Error deleting alternative:', error);
+      toast.error('Failed to delete alternative exercise');
     }
   };
 
@@ -315,296 +344,356 @@ export function ExerciseForm({
   );
 
   return (
-    <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
-      {/* Exercise Selection */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Exercise Selection</CardTitle>
-          <CardDescription>
-            Choose the main exercise for this section
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Search Exercises</Label>
-            <div className="relative">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search exercises..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="pl-8"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="exercise_id">Select Exercise</Label>
-            <Select
-              value={watch('exercise_id')?.toString()}
-              onValueChange={value => setValue('exercise_id', parseInt(value))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose an exercise" />
-              </SelectTrigger>
-              <SelectContent className="max-h-60">
-                {filteredExercises.map(exercise => (
-                  <SelectItem key={exercise.id} value={exercise.id.toString()}>
-                    <div className="flex items-center gap-2">
-                      <span>{exercise.name}</span>
-                      {exercise.video_url && (
-                        <PlayCircle className="h-4 w-4 text-muted-foreground" />
-                      )}
-                      {exercise.thumbnail_url && (
-                        <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {errors.exercise_id && (
-              <p className="text-sm text-red-600">
-                {errors.exercise_id.message}
-              </p>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setShowCreateExercise(!showCreateExercise)}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Create New Exercise
-            </Button>
-          </div>
-
-          {showCreateExercise && (
-            <Card>
-              <CardContent className="pt-6 space-y-4">
-                <div className="space-y-2">
-                  <Label>Exercise Name</Label>
-                  <Input
-                    placeholder="Enter exercise name"
-                    value={newExerciseName}
-                    onChange={e => setNewExerciseName(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Description</Label>
-                  <Textarea
-                    placeholder="Enter exercise description"
-                    value={newExerciseDescription}
-                    onChange={e => setNewExerciseDescription(e.target.value)}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button type="button" onClick={handleCreateNewExercise}>
-                    Create Exercise
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setShowCreateExercise(false)}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Exercise Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Exercise Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+    <div className="space-y-6">
+      {/* Main Exercise Form */}
+      <form onSubmit={mainForm.handleSubmit(handleMainExerciseSubmit)}>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5" />
+              {initialData ? 'Edit Exercise' : 'Add Main Exercise'}
+            </CardTitle>
+            <CardDescription>
+              {initialData
+                ? 'Update the exercise details'
+                : 'First, add the main exercise. You can add alternatives after saving.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Exercise Selection */}
             <div className="space-y-2">
-              <Label htmlFor="exercise_order">Exercise Order</Label>
-              <Input
-                id="exercise_order"
-                type="number"
-                min="1"
-                {...register('exercise_order', { valueAsNumber: true })}
-              />
-              {errors.exercise_order && (
-                <p className="text-sm text-red-600">
-                  {errors.exercise_order.message}
-                </p>
-              )}
+              <Label>Search Exercises</Label>
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search exercises..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="pl-8"
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="equipment_id">Equipment (Optional)</Label>
+              <Label htmlFor="exercise_id">Select Exercise</Label>
               <Select
-                value={watch('equipment_id')?.toString() || 'none'}
+                value={mainForm.watch('exercise_id')?.toString()}
                 onValueChange={value =>
-                  setValue(
-                    'equipment_id',
-                    value === 'none' ? undefined : parseInt(value)
-                  )
+                  mainForm.setValue('exercise_id', parseInt(value))
                 }
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select equipment" />
+                  <SelectValue placeholder="Choose an exercise" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No equipment</SelectItem>
-                  {equipment.map(item => (
-                    <SelectItem key={item.id} value={item.id.toString()}>
-                      {item.name}
+                <SelectContent className="max-h-60">
+                  {filteredExercises.map(exercise => (
+                    <SelectItem
+                      key={exercise.id}
+                      value={exercise.id.toString()}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span>{exercise.name}</span>
+                        {exercise.video_url && (
+                          <PlayCircle className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        {exercise.thumbnail_url && (
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowCreateEquipment(!showCreateEquipment)}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Equipment
-                </Button>
-              </div>
-
-              {showCreateEquipment && (
-                <Card>
-                  <CardContent className="pt-6 space-y-4">
-                    <div className="space-y-2">
-                      <Label>Equipment Name</Label>
-                      <Input
-                        placeholder="Enter equipment name"
-                        value={newEquipmentName}
-                        onChange={e => setNewEquipmentName(e.target.value)}
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button type="button" onClick={handleCreateNewEquipment}>
-                        Create Equipment
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setShowCreateEquipment(false)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
+              {mainForm.formState.errors.exercise_id && (
+                <p className="text-sm text-red-600">
+                  {mainForm.formState.errors.exercise_id.message}
+                </p>
               )}
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="sets">Sets</Label>
-              <Input
-                id="sets"
-                type="number"
-                min="1"
-                placeholder="Number of sets"
-                {...register('sets', { valueAsNumber: true })}
-              />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowCreateExercise(!showCreateExercise)}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Create New Exercise
+              </Button>
+            </div>
+
+            {showCreateExercise && (
+              <Card>
+                <CardContent className="pt-6 space-y-4">
+                  <div className="space-y-2">
+                    <Label>Exercise Name</Label>
+                    <Input
+                      placeholder="Enter exercise name"
+                      value={newExerciseName}
+                      onChange={e => setNewExerciseName(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <Textarea
+                      placeholder="Enter exercise description"
+                      value={newExerciseDescription}
+                      onChange={e => setNewExerciseDescription(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button type="button" onClick={handleCreateNewExercise}>
+                      Create Exercise
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setShowCreateExercise(false)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Exercise Details */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="exercise_order">Exercise Order</Label>
+                <Input
+                  id="exercise_order"
+                  type="number"
+                  min="1"
+                  {...mainForm.register('exercise_order', {
+                    valueAsNumber: true,
+                  })}
+                />
+                {mainForm.formState.errors.exercise_order && (
+                  <p className="text-sm text-red-600">
+                    {mainForm.formState.errors.exercise_order.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="equipment_id">Equipment (Optional)</Label>
+                <Select
+                  value={mainForm.watch('equipment_id')?.toString() || 'none'}
+                  onValueChange={value =>
+                    mainForm.setValue(
+                      'equipment_id',
+                      value === 'none' ? undefined : parseInt(value)
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select equipment" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No equipment</SelectItem>
+                    {equipment.map(item => (
+                      <SelectItem key={item.id} value={item.id.toString()}>
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowCreateEquipment(!showCreateEquipment)}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Equipment
+                  </Button>
+                </div>
+
+                {showCreateEquipment && (
+                  <Card>
+                    <CardContent className="pt-6 space-y-4">
+                      <div className="space-y-2">
+                        <Label>Equipment Name</Label>
+                        <Input
+                          placeholder="Enter equipment name"
+                          value={newEquipmentName}
+                          onChange={e => setNewEquipmentName(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          onClick={handleCreateNewEquipment}
+                        >
+                          Create Equipment
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShowCreateEquipment(false)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="sets">Sets</Label>
+                <Input
+                  id="sets"
+                  type="number"
+                  min="1"
+                  placeholder="Number of sets"
+                  {...mainForm.register('sets', { valueAsNumber: true })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="reps">Reps</Label>
+                <Input
+                  id="reps"
+                  placeholder="e.g., 8-12, AMRAP"
+                  {...mainForm.register('reps')}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="duration_seconds">Duration (seconds)</Label>
+                <Input
+                  id="duration_seconds"
+                  type="number"
+                  min="0"
+                  placeholder="Exercise duration"
+                  {...mainForm.register('duration_seconds', {
+                    valueAsNumber: true,
+                  })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="rest_time_seconds">Rest Time (seconds)</Label>
+                <Input
+                  id="rest_time_seconds"
+                  type="number"
+                  min="0"
+                  placeholder="Rest after exercise"
+                  {...mainForm.register('rest_time_seconds', {
+                    valueAsNumber: true,
+                  })}
+                />
+              </div>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="reps">Reps</Label>
-              <Input
-                id="reps"
-                placeholder="e.g., 8-12, AMRAP"
-                {...register('reps')}
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                placeholder="Special instructions or modifications"
+                {...mainForm.register('notes')}
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="duration_seconds">Duration (seconds)</Label>
-              <Input
-                id="duration_seconds"
-                type="number"
-                min="0"
-                placeholder="Exercise duration"
-                {...register('duration_seconds', { valueAsNumber: true })}
-              />
+            <div className="flex justify-end space-x-2">
+              <Button type="submit" disabled={loading}>
+                {loading
+                  ? initialData
+                    ? 'Updating Exercise...'
+                    : 'Creating Exercise...'
+                  : initialData
+                    ? 'Update Exercise'
+                    : 'Create Exercise'}
+              </Button>
             </div>
+          </CardContent>
+        </Card>
+      </form>
 
-            <div className="space-y-2">
-              <Label htmlFor="rest_time_seconds">Rest Time (seconds)</Label>
-              <Input
-                id="rest_time_seconds"
-                type="number"
-                min="0"
-                placeholder="Rest after exercise"
-                {...register('rest_time_seconds', { valueAsNumber: true })}
-              />
+      {/* Alternative Exercises Section - Only show after main exercise is saved */}
+      {isMainExerciseSaved && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <span className="text-orange-600">⚡</span>
+                  Alternative Exercises
+                </CardTitle>
+                <CardDescription>
+                  Add alternative exercises for different skill levels or
+                  equipment options
+                </CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowAlternativeForm(true)}
+                disabled={showAlternativeForm}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Alternative
+              </Button>
             </div>
-          </div>
+          </CardHeader>
+          <CardContent>
+            {/* Existing Alternatives List */}
+            {alternatives.length > 0 && (
+              <div className="space-y-3 mb-4">
+                {alternatives.map((alt, index) => (
+                  <Card
+                    key={alt.id}
+                    className="border-l-4 border-l-orange-500 bg-orange-50/50"
+                  >
+                    <CardContent className="pt-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="font-medium text-sm text-orange-900">
+                            Alternative {index + 1}: {alt.exercise.name}
+                          </div>
+                          <div className="text-sm text-muted-foreground mt-1">
+                            {alt.sets && `${alt.sets} sets`}
+                            {alt.reps && ` × ${alt.reps}`}
+                            {alt.duration_seconds &&
+                              ` • ${alt.duration_seconds}s`}
+                            {alt.notes && ` • ${alt.notes}`}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteAlternative(alt.id)}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
 
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notes</Label>
-            <Textarea
-              id="notes"
-              placeholder="Special instructions or modifications"
-              {...register('notes')}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Alternative Exercises */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Alternative Exercises</CardTitle>
-              <CardDescription>
-                Provide alternative exercises for different skill levels or
-                equipment
-              </CardDescription>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() =>
-                addAlternative({
-                  equipment_id: undefined,
-                  reps: '',
-                  sets: 1,
-                  duration_seconds: 0,
-                  rest_time_seconds: 0,
-                  notes: '',
-                })
-              }
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add Alternative
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {alternatives.length > 0 ? (
-            <div className="space-y-4">
-              {alternatives.map((field, index) => (
-                <Card key={field.id} className="border-l-4 border-l-orange-500">
+            {/* Add Alternative Form */}
+            {showAlternativeForm && (
+              <form onSubmit={altForm.handleSubmit(handleAddAlternative)}>
+                <Card className="border-dashed border-2 border-orange-200">
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm">
-                        Alternative {index + 1}
+                      <CardTitle className="text-sm text-orange-900">
+                        Add New Alternative
                       </CardTitle>
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={() => removeAlternative(index)}
+                        onClick={() => setShowAlternativeForm(false)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -615,16 +704,9 @@ export function ExerciseForm({
                       <div className="space-y-2">
                         <Label>Exercise</Label>
                         <Select
-                          value={
-                            watch(
-                              `alternatives.${index}.exercise_id`
-                            )?.toString() || ''
-                          }
+                          value={altForm.watch('exercise_id')?.toString() || ''}
                           onValueChange={value =>
-                            setValue(
-                              `alternatives.${index}.exercise_id`,
-                              parseInt(value)
-                            )
+                            altForm.setValue('exercise_id', parseInt(value))
                           }
                         >
                           <SelectTrigger>
@@ -641,51 +723,41 @@ export function ExerciseForm({
                             ))}
                           </SelectContent>
                         </Select>
+                        {altForm.formState.errors.exercise_id && (
+                          <p className="text-sm text-red-600">
+                            {altForm.formState.errors.exercise_id.message}
+                          </p>
+                        )}
                       </div>
 
                       <div className="space-y-2">
                         <Label>Equipment (Optional)</Label>
-                        <div className="flex gap-2">
-                          <Select
-                            value={
-                              watch(
-                                `alternatives.${index}.equipment_id`
-                              )?.toString() || 'none'
-                            }
-                            onValueChange={value =>
-                              setValue(
-                                `alternatives.${index}.equipment_id`,
-                                value === 'none' ? undefined : parseInt(value)
-                              )
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select equipment" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">No equipment</SelectItem>
-                              {equipment.map(item => (
-                                <SelectItem
-                                  key={item.id}
-                                  value={item.id.toString()}
-                                >
-                                  {item.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              setShowCreateEquipment(!showCreateEquipment)
-                            }
-                            className="px-3"
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <Select
+                          value={
+                            altForm.watch('equipment_id')?.toString() || 'none'
+                          }
+                          onValueChange={value =>
+                            altForm.setValue(
+                              'equipment_id',
+                              value === 'none' ? undefined : parseInt(value)
+                            )
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select equipment" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No equipment</SelectItem>
+                            {equipment.map(item => (
+                              <SelectItem
+                                key={item.id}
+                                value={item.id.toString()}
+                              >
+                                {item.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
 
@@ -696,9 +768,7 @@ export function ExerciseForm({
                           type="number"
                           min="1"
                           placeholder="Sets"
-                          {...register(`alternatives.${index}.sets`, {
-                            valueAsNumber: true,
-                          })}
+                          {...altForm.register('sets', { valueAsNumber: true })}
                         />
                       </div>
 
@@ -706,7 +776,7 @@ export function ExerciseForm({
                         <Label>Reps</Label>
                         <Input
                           placeholder="Reps"
-                          {...register(`alternatives.${index}.reps`)}
+                          {...altForm.register('reps')}
                         />
                       </div>
 
@@ -716,10 +786,9 @@ export function ExerciseForm({
                           type="number"
                           min="0"
                           placeholder="Duration"
-                          {...register(
-                            `alternatives.${index}.duration_seconds`,
-                            { valueAsNumber: true }
-                          )}
+                          {...altForm.register('duration_seconds', {
+                            valueAsNumber: true,
+                          })}
                         />
                       </div>
 
@@ -729,10 +798,9 @@ export function ExerciseForm({
                           type="number"
                           min="0"
                           placeholder="Rest"
-                          {...register(
-                            `alternatives.${index}.rest_time_seconds`,
-                            { valueAsNumber: true }
-                          )}
+                          {...altForm.register('rest_time_seconds', {
+                            valueAsNumber: true,
+                          })}
                         />
                       </div>
                     </div>
@@ -741,32 +809,47 @@ export function ExerciseForm({
                       <Label>Notes</Label>
                       <Textarea
                         placeholder="Alternative exercise notes"
-                        {...register(`alternatives.${index}.notes`)}
+                        {...altForm.register('notes')}
                       />
+                    </div>
+
+                    <div className="flex justify-end space-x-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setShowAlternativeForm(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={alternativeLoading}>
+                        {alternativeLoading ? 'Adding...' : 'Add Alternative'}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              <p>No alternative exercises added yet</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              </form>
+            )}
 
-      <div className="flex justify-end space-x-2">
-        <Button type="submit" disabled={loading}>
-          {loading
-            ? initialData
-              ? 'Updating Exercise...'
-              : 'Adding Exercise...'
-            : initialData
-              ? 'Update Exercise'
-              : 'Add Exercise'}
-        </Button>
-      </div>
-    </form>
+            {alternatives.length === 0 && !showAlternativeForm && (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No alternative exercises added yet</p>
+                <p className="text-sm">
+                  Click "Add Alternative" to provide exercise options
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Final Actions */}
+      {onClose && (
+        <div className="flex justify-end">
+          <Button variant="outline" onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

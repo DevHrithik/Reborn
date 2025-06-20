@@ -31,7 +31,7 @@ import {
   Star,
   X,
 } from 'lucide-react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm, useFieldArray, FieldArrayWithId } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { NutritionService, type Recipe } from '@/lib/data/nutrition';
 import {
@@ -85,7 +85,7 @@ export function RecipeManagement({ onUpdate }: RecipeManagementProps) {
     append: appendIngredient,
     remove: removeIngredient,
   } = useFieldArray({
-    control: form.control,
+    control: form.control as any,
     name: 'ingredients',
   });
 
@@ -94,7 +94,7 @@ export function RecipeManagement({ onUpdate }: RecipeManagementProps) {
     append: appendInstruction,
     remove: removeInstruction,
   } = useFieldArray({
-    control: form.control,
+    control: form.control as any,
     name: 'instructions',
   });
 
@@ -126,7 +126,14 @@ export function RecipeManagement({ onUpdate }: RecipeManagementProps) {
 
   const handleCreateRecipe = async (data: RecipeFormData) => {
     try {
-      await NutritionService.createRecipe(data);
+      // Convert form data to Recipe format
+      const recipeData = {
+        ...data,
+        thumbnail_url: data.thumbnail_url || null,
+        video_url: data.video_url || null,
+        emoji_fallback: data.emoji_fallback || null,
+      };
+      await NutritionService.createRecipe(recipeData);
       setIsCreateDialogOpen(false);
       form.reset();
       loadRecipes();
@@ -140,7 +147,14 @@ export function RecipeManagement({ onUpdate }: RecipeManagementProps) {
     if (!selectedRecipe) return;
 
     try {
-      await NutritionService.updateRecipe(selectedRecipe.id, data);
+      // Convert form data to Recipe format
+      const recipeData = {
+        ...data,
+        thumbnail_url: data.thumbnail_url || null,
+        video_url: data.video_url || null,
+        emoji_fallback: data.emoji_fallback || null,
+      };
+      await NutritionService.updateRecipe(selectedRecipe.id, recipeData);
       setIsEditDialogOpen(false);
       setSelectedRecipe(null);
       form.reset();

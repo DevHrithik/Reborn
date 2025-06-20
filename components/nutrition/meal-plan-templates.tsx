@@ -92,7 +92,7 @@ export function MealPlanTemplates({ onUpdate }: MealPlanTemplatesProps) {
 
   const handleCreateTemplate = async (data: MealPlanTemplateFormData) => {
     try {
-      await NutritionService.createMealPlanTemplate(data);
+      await NutritionService.createMealPlanTemplate(data as any);
       setIsCreateDialogOpen(false);
       form.reset();
       loadTemplates();

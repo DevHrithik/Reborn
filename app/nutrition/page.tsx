@@ -4,21 +4,14 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Plus,
-  Search,
-  Filter,
-  Download,
-  Upload,
-  Utensils,
   Apple,
   ChefHat,
   TrendingUp,
   Users,
   Target,
-  Calendar,
 } from 'lucide-react';
 import { NutritionService, type NutritionStats } from '@/lib/data/nutrition';
 import { FoodManagement } from '@/components/nutrition/food-management';

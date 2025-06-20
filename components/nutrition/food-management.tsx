@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
   Table,
@@ -45,7 +44,6 @@ import { NutritionService, type Food } from '@/lib/data/nutrition';
 import {
   foodSchema,
   FOOD_CATEGORIES,
-  MEAL_TYPES,
   type FoodFormData,
 } from '@/lib/validations/nutrition';
 import {
@@ -56,7 +54,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Textarea } from '@/components/ui/textarea';
 
 interface FoodManagementProps {
   onUpdate?: () => void;
@@ -124,7 +121,19 @@ export function FoodManagement({ onUpdate }: FoodManagementProps) {
 
   const handleCreateFood = async (data: FoodFormData) => {
     try {
-      await NutritionService.createFood(data);
+      // Convert undefined to null for fields that expect number | null
+      const foodData = {
+        ...data,
+        fiber_per_100g: data.fiber_per_100g ?? null,
+        sugar_per_100g: data.sugar_per_100g ?? null,
+        sodium_per_100g: data.sodium_per_100g ?? null,
+        is_starchy_vegetable: data.is_starchy_vegetable ?? null,
+        meal_types: data.meal_types as
+          | ('Breakfast' | 'Lunch' | 'Dinner' | 'Snacks')[]
+          | null,
+        restrictions: data.restrictions ?? null,
+      };
+      await NutritionService.createFood(foodData);
       setIsCreateDialogOpen(false);
       form.reset();
       loadFoods();
@@ -138,7 +147,19 @@ export function FoodManagement({ onUpdate }: FoodManagementProps) {
     if (!selectedFood) return;
 
     try {
-      await NutritionService.updateFood(selectedFood.id, data);
+      // Convert undefined to null for fields that expect number | null
+      const foodData = {
+        ...data,
+        fiber_per_100g: data.fiber_per_100g ?? null,
+        sugar_per_100g: data.sugar_per_100g ?? null,
+        sodium_per_100g: data.sodium_per_100g ?? null,
+        is_starchy_vegetable: data.is_starchy_vegetable ?? null,
+        meal_types: data.meal_types as
+          | ('Breakfast' | 'Lunch' | 'Dinner' | 'Snacks')[]
+          | null,
+        restrictions: data.restrictions ?? null,
+      };
+      await NutritionService.updateFood(selectedFood.id, foodData);
       setIsEditDialogOpen(false);
       setSelectedFood(null);
       form.reset();
@@ -174,7 +195,12 @@ export function FoodManagement({ onUpdate }: FoodManagementProps) {
       sugar_per_100g: food.sugar_per_100g || 0,
       sodium_per_100g: food.sodium_per_100g || 0,
       is_starchy_vegetable: food.is_starchy_vegetable || false,
-      meal_types: food.meal_types || [],
+      meal_types: food.meal_types
+        ? food.meal_types.filter(
+            (type): type is 'Breakfast' | 'Lunch' | 'Dinner' | 'Snacks' =>
+              ['Breakfast', 'Lunch', 'Dinner', 'Snacks'].includes(type)
+          )
+        : [],
       restrictions: food.restrictions || {},
     });
     setIsEditDialogOpen(true);
@@ -353,6 +379,7 @@ export function FoodManagement({ onUpdate }: FoodManagementProps) {
                     step="0.1"
                     placeholder="0"
                     {...field}
+                    value={field.value ?? ''}
                     onChange={e =>
                       field.onChange(Number(e.target.value) || null)
                     }
@@ -375,6 +402,7 @@ export function FoodManagement({ onUpdate }: FoodManagementProps) {
                     step="0.1"
                     placeholder="0"
                     {...field}
+                    value={field.value ?? ''}
                     onChange={e =>
                       field.onChange(Number(e.target.value) || null)
                     }
@@ -396,6 +424,7 @@ export function FoodManagement({ onUpdate }: FoodManagementProps) {
                     type="number"
                     placeholder="0"
                     {...field}
+                    value={field.value ?? ''}
                     onChange={e =>
                       field.onChange(Number(e.target.value) || null)
                     }

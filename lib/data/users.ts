@@ -146,35 +146,20 @@ export class UserService {
 
   async getUserActivity(userId: string): Promise<any[]> {
     try {
-      // Get user's workout sessions, community posts, etc.
-      const [workouts, posts] = await Promise.all([
-        this.supabase
-          .from('user_plans')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(10),
-
-        this.supabase
-          .from('community_posts')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(10),
-      ]);
+      // Get user's community posts
+      const { data: posts } = await this.supabase
+        .from('community_posts')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
       const activity = [
-        ...(workouts.data || []).map(workout => ({
-          type: 'workout',
-          title: `Workout Plan: ${workout.plan_id}`,
-          timestamp: workout.created_at,
-          status: workout.status || 'active',
-        })),
-        ...(posts.data || []).map(post => ({
+        ...(posts || []).map(post => ({
           type: 'community',
           title: `Community Post: ${post.content?.slice(0, 50)}...`,
-          timestamp: post.created_at,
-          status: post.status,
+          timestamp: post.created_at || new Date().toISOString(),
+          status: 'published',
         })),
       ];
 

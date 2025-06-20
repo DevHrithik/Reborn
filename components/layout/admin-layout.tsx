@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Sidebar } from './sidebar';
-import { Header } from './header';
+// import { Header } from './header';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -37,10 +37,10 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
       {/* Main content */}
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Header
+        {/* <Header
           onMenuClick={() => setSidebarOpen(true)}
           sidebarCollapsed={sidebarCollapsed}
-        />
+        /> */}
         <main className="flex-1 overflow-auto">{children}</main>
       </div>
     </div>

@@ -13,8 +13,6 @@ import {
   Apple,
   MessageSquare,
   HelpCircle,
-  BarChart3,
-  Settings,
   LogOut,
   Sparkles,
   ChevronLeft,
@@ -213,7 +211,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse }: SidebarProps) {
                 <span className="text-xs font-bold text-white">AD</span>
               </div>
             </div>
-            <Button
+            {/* <Button
               variant="ghost"
               className="w-full justify-center p-2 text-slate-300 hover:text-white hover:bg-red-600/20 transition-all duration-300 group relative"
             >
@@ -223,7 +221,7 @@ export function Sidebar({ collapsed = false, onToggleCollapse }: SidebarProps) {
               <div className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-sm rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
                 Sign out
               </div>
-            </Button>
+            </Button> */}
           </div>
         )}
       </div>

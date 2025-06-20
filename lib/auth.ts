@@ -32,7 +32,7 @@ export class AuthService {
         .eq('email', email)
         .single();
 
-      if (error || !adminUser) {
+      if (error || !adminUser || !adminUser.id) {
         return null;
       }
 
@@ -48,14 +48,16 @@ export class AuthService {
       });
 
       // Log activity
-      await this.logActivity(adminUser.id, 'login', 'auth', null, { email });
+      await this.logActivity(adminUser.id, 'login', 'auth', null, {
+        email,
+      });
 
       return {
         user: {
           id: adminUser.id,
           email: adminUser.email,
-          role: adminUser.role,
-          full_name: adminUser.full_name,
+          role: adminUser.role || 'admin',
+          full_name: adminUser.full_name || 'Admin User',
           permissions: adminUser.permissions as Record<string, boolean>,
         },
         session_token: sessionToken,
@@ -72,7 +74,7 @@ export class AuthService {
       .eq('session_token', sessionToken)
       .single();
 
-    if (session) {
+    if (session && session.admin_id) {
       await this.logActivity(session.admin_id, 'logout', 'auth', null, {});
 
       await this.supabase
@@ -116,10 +118,10 @@ export class AuthService {
     }
 
     return {
-      id: adminUser.id,
-      email: adminUser.email,
-      role: adminUser.role,
-      full_name: adminUser.full_name,
+      id: adminUser.id || '',
+      email: adminUser.email || '',
+      role: adminUser.role || 'admin',
+      full_name: adminUser.full_name || 'Admin User',
       permissions: adminUser.permissions as Record<string, boolean>,
     };
   }

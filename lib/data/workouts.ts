@@ -35,7 +35,10 @@ export interface DaySection {
   id: number;
   workout_day_id: number;
   name: 'Warm-up' | 'Main Workout' | 'Recovery' | 'Cooldown';
+  section_type: 'Warm-up' | 'Main Workout' | 'Recovery' | 'Cooldown';
+  description?: string | null;
   section_order: number;
+  order_index: number;
   rounds: number;
   rest_between_rounds_seconds: number | null;
   created_at: string;
@@ -55,6 +58,7 @@ export interface SectionExercise {
   notes: string | null;
   created_at: string;
   exercise?: Exercise;
+  equipment?: Equipment;
   alternatives?: SectionExercise[];
 }
 
@@ -67,18 +71,17 @@ export interface Equipment {
 export class WorkoutService {
   // Plan Management
   static async getPlans() {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('plans')
       .select('*')
-      .order('category', { ascending: true })
-      .order('focus', { ascending: true });
+      .order('created_at', { ascending: false });
 
     if (error) throw error;
     return data as Plan[];
   }
 
   static async createPlan(plan: Omit<Plan, 'id' | 'created_at'>) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('plans')
       .insert(plan)
       .select()
@@ -89,7 +92,7 @@ export class WorkoutService {
   }
 
   static async updatePlan(id: number, updates: Partial<Plan>) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('plans')
       .update(updates)
       .eq('id', id)
@@ -101,14 +104,17 @@ export class WorkoutService {
   }
 
   static async deletePlan(id: number) {
-    const { error } = await supabase.from('plans').delete().eq('id', id);
+    const { error } = await (supabase as any)
+      .from('plans')
+      .delete()
+      .eq('id', id);
 
     if (error) throw error;
   }
 
   // Workout Day Management
   static async getWorkoutDays(planId: number) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('workout_days')
       .select(
         `
@@ -125,7 +131,7 @@ export class WorkoutService {
   }
 
   static async createWorkoutDay(day: Omit<WorkoutDay, 'id' | 'created_at'>) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('workout_days')
       .insert(day)
       .select()
@@ -136,7 +142,7 @@ export class WorkoutService {
   }
 
   static async updateWorkoutDay(id: number, updates: Partial<WorkoutDay>) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('workout_days')
       .update(updates)
       .eq('id', id)
@@ -148,14 +154,17 @@ export class WorkoutService {
   }
 
   static async deleteWorkoutDay(id: number) {
-    const { error } = await supabase.from('workout_days').delete().eq('id', id);
+    const { error } = await (supabase as any)
+      .from('workout_days')
+      .delete()
+      .eq('id', id);
 
     if (error) throw error;
   }
 
   // Exercise Management
   static async getExercises() {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('exercises')
       .select('*')
       .order('name');
@@ -165,7 +174,7 @@ export class WorkoutService {
   }
 
   static async createExercise(exercise: Omit<Exercise, 'id' | 'created_at'>) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('exercises')
       .insert(exercise)
       .select()
@@ -176,7 +185,7 @@ export class WorkoutService {
   }
 
   static async updateExercise(id: number, updates: Partial<Exercise>) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('exercises')
       .update(updates)
       .eq('id', id)
@@ -188,14 +197,17 @@ export class WorkoutService {
   }
 
   static async deleteExercise(id: number) {
-    const { error } = await supabase.from('exercises').delete().eq('id', id);
+    const { error } = await (supabase as any)
+      .from('exercises')
+      .delete()
+      .eq('id', id);
 
     if (error) throw error;
   }
 
   // Day Section Management
   static async getDaySections(workoutDayId: number) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('day_sections')
       .select('*')
       .eq('workout_day_id', workoutDayId)
@@ -208,7 +220,7 @@ export class WorkoutService {
   static async createDaySection(
     section: Omit<DaySection, 'id' | 'created_at'>
   ) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('day_sections')
       .insert(section)
       .select()
@@ -219,7 +231,7 @@ export class WorkoutService {
   }
 
   static async updateDaySection(id: number, updates: Partial<DaySection>) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('day_sections')
       .update(updates)
       .eq('id', id)
@@ -231,22 +243,27 @@ export class WorkoutService {
   }
 
   static async deleteDaySection(id: number) {
-    const { error } = await supabase.from('day_sections').delete().eq('id', id);
+    const { error } = await (supabase as any)
+      .from('day_sections')
+      .delete()
+      .eq('id', id);
 
     if (error) throw error;
   }
 
   // Section Exercise Management
   static async getSectionExercises(daySectionId: number) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('section_exercises')
       .select(
         `
         *,
         exercise:exercises(*),
+        equipment:equipment(*),
         alternatives:section_exercises!parent_section_exercise_id(
           *,
-          exercise:exercises(*)
+          exercise:exercises(*),
+          equipment:equipment(*)
         )
       `
       )
@@ -257,14 +274,18 @@ export class WorkoutService {
     if (error) throw error;
     return data as (SectionExercise & {
       exercise: Exercise;
-      alternatives: (SectionExercise & { exercise: Exercise })[];
+      equipment?: Equipment;
+      alternatives: (SectionExercise & {
+        exercise: Exercise;
+        equipment?: Equipment;
+      })[];
     })[];
   }
 
   static async createSectionExercise(
     sectionExercise: Omit<SectionExercise, 'id' | 'created_at'>
   ) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('section_exercises')
       .insert(sectionExercise)
       .select()
@@ -278,7 +299,7 @@ export class WorkoutService {
     id: number,
     updates: Partial<SectionExercise>
   ) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('section_exercises')
       .update(updates)
       .eq('id', id)
@@ -290,7 +311,7 @@ export class WorkoutService {
   }
 
   static async deleteSectionExercise(id: number) {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('section_exercises')
       .delete()
       .eq('id', id);
@@ -300,7 +321,7 @@ export class WorkoutService {
 
   // Equipment Management
   static async getEquipment() {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('equipment')
       .select('*')
       .order('name');
@@ -312,7 +333,7 @@ export class WorkoutService {
   static async createEquipment(
     equipment: Omit<Equipment, 'id' | 'created_at'>
   ) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('equipment')
       .insert(equipment)
       .select()
@@ -323,7 +344,7 @@ export class WorkoutService {
   }
 
   static async updateEquipment(id: number, updates: Partial<Equipment>) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('equipment')
       .update(updates)
       .eq('id', id)
@@ -335,7 +356,10 @@ export class WorkoutService {
   }
 
   static async deleteEquipment(id: number) {
-    const { error } = await supabase.from('equipment').delete().eq('id', id);
+    const { error } = await (supabase as any)
+      .from('equipment')
+      .delete()
+      .eq('id', id);
 
     if (error) throw error;
   }
@@ -344,14 +368,14 @@ export class WorkoutService {
   static async duplicateWeek(planId: number, fromWeek: number, toWeek: number) {
     try {
       // Get all workout days from the source week
-      const { data: sourceDays, error: daysError } = await supabase
+      const { data: sourceDays, error: daysError } = await (supabase as any)
         .from('workout_days')
         .select(
           `
           *,
-          day_sections(
+          day_sections (
             *,
-            section_exercises(
+            section_exercises (
               *,
               alternatives:section_exercises!parent_section_exercise_id(*)
             )
@@ -362,10 +386,11 @@ export class WorkoutService {
         .eq('week_number', fromWeek);
 
       if (daysError) throw daysError;
+      if (!sourceDays || sourceDays.length === 0) return;
 
-      // Create new workout days for the target week
+      // Create new days for target week
       for (const sourceDay of sourceDays) {
-        const { data: newDay, error: dayError } = await supabase
+        const { data: newDay, error: dayError } = await (supabase as any)
           .from('workout_days')
           .insert({
             plan_id: planId,
@@ -380,8 +405,10 @@ export class WorkoutService {
         if (dayError) throw dayError;
 
         // Create sections for the new day
-        for (const sourceSection of sourceDay.day_sections) {
-          const { data: newSection, error: sectionError } = await supabase
+        for (const sourceSection of sourceDay.day_sections || []) {
+          const { data: newSection, error: sectionError } = await (
+            supabase as any
+          )
             .from('day_sections')
             .insert({
               workout_day_id: newDay.id,
@@ -399,10 +426,12 @@ export class WorkoutService {
           // Create exercises for the new section
           const exerciseIdMap = new Map();
 
-          for (const sourceExercise of sourceSection.section_exercises.filter(
-            (e: any) => !e.parent_section_exercise_id
-          )) {
-            const { data: newExercise, error: exerciseError } = await supabase
+          for (const sourceExercise of (
+            sourceSection.section_exercises || []
+          ).filter((e: any) => !e.parent_section_exercise_id)) {
+            const { data: newExercise, error: exerciseError } = await (
+              supabase as any
+            )
               .from('section_exercises')
               .insert({
                 day_section_id: newSection.id,
@@ -419,11 +448,12 @@ export class WorkoutService {
               .single();
 
             if (exerciseError) throw exerciseError;
+
             exerciseIdMap.set(sourceExercise.id, newExercise.id);
 
             // Create alternatives
-            for (const alternative of sourceExercise.alternatives) {
-              await supabase.from('section_exercises').insert({
+            for (const alternative of sourceExercise.alternatives || []) {
+              await (supabase as any).from('section_exercises').insert({
                 day_section_id: newSection.id,
                 exercise_id: alternative.exercise_id,
                 parent_section_exercise_id: newExercise.id,
@@ -440,12 +470,13 @@ export class WorkoutService {
         }
       }
     } catch (error) {
+      console.error('Error duplicating week:', error);
       throw error;
     }
   }
 
   static async getWeeklyOverview(planId: number) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('workout_days')
       .select('week_number, day_number, name, duration_est')
       .eq('plan_id', planId)
@@ -453,15 +484,6 @@ export class WorkoutService {
       .order('day_number');
 
     if (error) throw error;
-
-    const weeks = data.reduce((acc: any, day: any) => {
-      if (!acc[day.week_number]) {
-        acc[day.week_number] = [];
-      }
-      acc[day.week_number].push(day);
-      return acc;
-    }, {});
-
-    return weeks;
+    return data;
   }
 }

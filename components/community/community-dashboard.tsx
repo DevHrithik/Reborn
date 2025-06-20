@@ -103,7 +103,7 @@ export function CommunityDashboard() {
 
         toast({
           title: 'New Community Post',
-          description: `New ${newPost.post_type} post from ${newPost.user?.full_name || 'Unknown User'}`,
+          description: `New ${newPost.category} post from ${newPost.user?.full_name || 'Unknown User'}`,
         });
       }
     );
@@ -111,7 +111,7 @@ export function CommunityDashboard() {
     const flaggedContentSubscription =
       CommunityService.subscribeToFlaggedContent(moderation => {
         setStats(prev =>
-          prev ? { ...prev, flaggedContent: prev.flaggedContent + 1 } : null
+          prev ? { ...prev, pendingReports: prev.pendingReports + 1 } : null
         );
 
         toast({
@@ -388,14 +388,12 @@ export function CommunityDashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                Pending Moderation
+                Pending Reports
               </CardTitle>
               <Shield className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {stats.pendingModeration}
-              </div>
+              <div className="text-2xl font-bold">{stats.pendingReports}</div>
               <p className="text-xs text-muted-foreground">Requires review</p>
             </CardContent>
           </Card>
@@ -403,14 +401,14 @@ export function CommunityDashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                Flagged Content
+                Total Comments
               </CardTitle>
-              <Flag className="h-4 w-4 text-muted-foreground" />
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats.flaggedContent}</div>
+              <div className="text-2xl font-bold">{stats.totalComments}</div>
               <p className="text-xs text-muted-foreground">
-                Auto-flagged items
+                {stats.commentsToday} today
               </p>
             </CardContent>
           </Card>
@@ -418,17 +416,13 @@ export function CommunityDashboard() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                Avg. Engagement
+                Active Users
               </CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {stats.engagementMetrics.averageLikes}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {stats.engagementMetrics.averageComments} avg. comments
-              </p>
+              <div className="text-2xl font-bold">{stats.activeUsers}</div>
+              <p className="text-xs text-muted-foreground">Last 7 days</p>
             </CardContent>
           </Card>
         </div>
@@ -590,8 +584,12 @@ export function CommunityDashboard() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={getPostTypeColor(post.post_type)}>
-                          {post.post_type}
+                        <Badge
+                          className={getPostTypeColor(
+                            post.post_type || 'sharing'
+                          )}
+                        >
+                          {post.post_type || 'sharing'}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -680,7 +678,7 @@ export function CommunityDashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {stats.postsByType.map(item => (
+                    {(stats.postsByType || []).map(item => (
                       <div
                         key={item.type}
                         className="flex justify-between items-center"
@@ -702,24 +700,24 @@ export function CommunityDashboard() {
                     <div className="flex justify-between items-center">
                       <span>Approved Today</span>
                       <Badge className="bg-green-100 text-green-800">
-                        {stats.moderationStats.approvedToday}
+                        {stats.moderationStats?.approvedToday || 0}
                       </Badge>
                     </div>
                     <div className="flex justify-between items-center">
                       <span>Rejected Today</span>
                       <Badge className="bg-red-100 text-red-800">
-                        {stats.moderationStats.rejectedToday}
+                        {stats.moderationStats?.rejectedToday || 0}
                       </Badge>
                     </div>
                     <div className="flex justify-between items-center">
                       <span>Auto-approved</span>
                       <Badge className="bg-blue-100 text-blue-800">
-                        {stats.moderationStats.autoApproved}
+                        {stats.moderationStats?.autoApproved || 0}
                       </Badge>
                     </div>
                     <div className="flex justify-between items-center">
                       <span>Avg. Response Time</span>
-                      <Badge>{stats.moderationStats.responseTime}m</Badge>
+                      <Badge>{stats.moderationStats?.responseTime || 0}m</Badge>
                     </div>
                   </div>
                 </CardContent>
@@ -757,10 +755,10 @@ export function CommunityDashboard() {
                     </h3>
                     <Badge
                       className={getPostTypeColor(
-                        postDetailsDialog.post.post_type
+                        postDetailsDialog.post.post_type || 'sharing'
                       )}
                     >
-                      {postDetailsDialog.post.post_type}
+                      {postDetailsDialog.post.post_type || 'sharing'}
                     </Badge>
                     <Badge
                       className={getStatusColor(

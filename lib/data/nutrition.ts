@@ -113,7 +113,7 @@ export class NutritionService {
     category?: string,
     search?: string
   ): Promise<Food[]> {
-    let query = supabase
+    let query = (supabase as any)
       .from('foods')
       .select('*')
       .order('name', { ascending: true })
@@ -134,11 +134,11 @@ export class NutritionService {
       throw error;
     }
 
-    return data || [];
+    return (data || []) as Food[];
   }
 
   static async getFoodById(id: number) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('foods')
       .select('*')
       .eq('id', id)
@@ -151,7 +151,7 @@ export class NutritionService {
   static async createFood(
     foodData: Omit<Food, 'id' | 'created_at'>
   ): Promise<Food> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('foods')
       .insert([foodData])
       .select()
@@ -162,14 +162,14 @@ export class NutritionService {
       throw error;
     }
 
-    return data;
+    return data as Food;
   }
 
   static async updateFood(
     id: number,
     foodData: Partial<Omit<Food, 'id' | 'created_at'>>
   ): Promise<Food> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('foods')
       .update(foodData)
       .eq('id', id)
@@ -181,11 +181,14 @@ export class NutritionService {
       throw error;
     }
 
-    return data;
+    return data as Food;
   }
 
   static async deleteFood(id: number): Promise<void> {
-    const { error } = await supabase.from('foods').delete().eq('id', id);
+    const { error } = await (supabase as any)
+      .from('foods')
+      .delete()
+      .eq('id', id);
 
     if (error) {
       console.error('Error deleting food:', error);
@@ -194,17 +197,20 @@ export class NutritionService {
   }
 
   static async getFoodsByCategory() {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('foods')
       .select('category')
       .order('category');
 
     if (error) throw error;
 
-    const counts = data.reduce((acc: { [key: string]: number }, food) => {
-      acc[food.category] = (acc[food.category] || 0) + 1;
-      return acc;
-    }, {});
+    const counts = (data || []).reduce(
+      (acc: { [key: string]: number }, food: any) => {
+        acc[food.category] = (acc[food.category] || 0) + 1;
+        return acc;
+      },
+      {}
+    );
 
     return Object.entries(counts).map(([category, count]) => ({
       category,
@@ -214,7 +220,7 @@ export class NutritionService {
 
   // Meal Plan Template Operations
   static async getAllMealPlanTemplates(): Promise<MealPlanTemplate[]> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('meal_plan_templates')
       .select('*')
       .order('created_at', { ascending: false });
@@ -224,11 +230,11 @@ export class NutritionService {
       throw error;
     }
 
-    return data || [];
+    return (data || []) as MealPlanTemplate[];
   }
 
   static async getMealPlanTemplateById(id: number) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('meal_plan_templates')
       .select('*')
       .eq('id', id)
@@ -241,7 +247,7 @@ export class NutritionService {
   static async createMealPlanTemplate(
     templateData: Omit<MealPlanTemplate, 'id' | 'created_at'>
   ): Promise<MealPlanTemplate> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('meal_plan_templates')
       .insert([templateData])
       .select()
@@ -252,14 +258,14 @@ export class NutritionService {
       throw error;
     }
 
-    return data;
+    return data as MealPlanTemplate;
   }
 
   static async updateMealPlanTemplate(
     id: number,
     templateData: Partial<Omit<MealPlanTemplate, 'id' | 'created_at'>>
   ): Promise<MealPlanTemplate> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('meal_plan_templates')
       .update(templateData)
       .eq('id', id)
@@ -271,11 +277,11 @@ export class NutritionService {
       throw error;
     }
 
-    return data;
+    return data as MealPlanTemplate;
   }
 
   static async deleteMealPlanTemplate(id: number): Promise<void> {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('meal_plan_templates')
       .delete()
       .eq('id', id);
@@ -293,7 +299,7 @@ export class NutritionService {
     category?: string,
     search?: string
   ): Promise<Recipe[]> {
-    let query = supabase
+    let query = (supabase as any)
       .from('recipes')
       .select('*')
       .order('created_at', { ascending: false })
@@ -314,11 +320,11 @@ export class NutritionService {
       throw error;
     }
 
-    return data || [];
+    return (data || []) as Recipe[];
   }
 
   static async getRecipeById(id: number) {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('recipes')
       .select('*')
       .eq('id', id)
@@ -331,7 +337,7 @@ export class NutritionService {
   static async createRecipe(
     recipeData: Omit<Recipe, 'id' | 'created_at'>
   ): Promise<Recipe> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('recipes')
       .insert([recipeData])
       .select()
@@ -342,14 +348,14 @@ export class NutritionService {
       throw error;
     }
 
-    return data;
+    return data as Recipe;
   }
 
   static async updateRecipe(
     id: number,
     recipeData: Partial<Omit<Recipe, 'id' | 'created_at'>>
   ): Promise<Recipe> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('recipes')
       .update(recipeData)
       .eq('id', id)
@@ -361,11 +367,14 @@ export class NutritionService {
       throw error;
     }
 
-    return data;
+    return data as Recipe;
   }
 
   static async deleteRecipe(id: number): Promise<void> {
-    const { error } = await supabase.from('recipes').delete().eq('id', id);
+    const { error } = await (supabase as any)
+      .from('recipes')
+      .delete()
+      .eq('id', id);
 
     if (error) {
       console.error('Error deleting recipe:', error);
@@ -375,7 +384,7 @@ export class NutritionService {
 
   // User Meal Plan Operations
   static async getUserMealPlans(userId: string): Promise<UserMealPlan[]> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('user_meal_plans')
       .select('*')
       .eq('user_id', userId)
@@ -386,13 +395,13 @@ export class NutritionService {
       throw error;
     }
 
-    return data || [];
+    return (data || []) as UserMealPlan[];
   }
 
   static async createUserMealPlan(
     planData: Omit<UserMealPlan, 'id' | 'created_at'>
   ): Promise<UserMealPlan> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('user_meal_plans')
       .insert([planData])
       .select()
@@ -403,14 +412,14 @@ export class NutritionService {
       throw error;
     }
 
-    return data;
+    return data as UserMealPlan;
   }
 
   static async updateUserMealPlan(
     id: number,
     planData: Partial<Omit<UserMealPlan, 'id' | 'created_at'>>
   ): Promise<UserMealPlan> {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('user_meal_plans')
       .update(planData)
       .eq('id', id)
@@ -422,11 +431,11 @@ export class NutritionService {
       throw error;
     }
 
-    return data;
+    return data as UserMealPlan;
   }
 
   static async deleteUserMealPlan(id: number): Promise<void> {
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('user_meal_plans')
       .delete()
       .eq('id', id);
@@ -443,24 +452,26 @@ export class NutritionService {
       // Get counts
       const [foodsResult, templatesResult, recipesResult, activePlansResult] =
         await Promise.all([
-          supabase.from('foods').select('id', { count: 'exact' }),
-          supabase.from('meal_plan_templates').select('id', { count: 'exact' }),
-          supabase.from('recipes').select('id', { count: 'exact' }),
-          supabase
+          (supabase as any).from('foods').select('id', { count: 'exact' }),
+          (supabase as any)
+            .from('meal_plan_templates')
+            .select('id', { count: 'exact' }),
+          (supabase as any).from('recipes').select('id', { count: 'exact' }),
+          (supabase as any)
             .from('user_meal_plans')
             .select('id', { count: 'exact' })
             .eq('is_active', true),
         ]);
 
       // Get foods by category
-      const { data: categoryData } = await supabase
+      const { data: categoryData } = await (supabase as any)
         .from('foods')
         .select('category')
         .order('category');
 
       const categoryStats =
         categoryData?.reduce(
-          (acc, food) => {
+          (acc: any, food: any) => {
             acc[food.category] = (acc[food.category] || 0) + 1;
             return acc;
           },
@@ -470,23 +481,23 @@ export class NutritionService {
       const foodsByCategory = Object.entries(categoryStats).map(
         ([category, count]) => ({
           category,
-          count,
+          count: count as number,
         })
       );
 
       // Get recently added items
       const [recentFoods, recentRecipes, recentMealPlans] = await Promise.all([
-        supabase
+        (supabase as any)
           .from('foods')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(5),
-        supabase
+        (supabase as any)
           .from('recipes')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(5),
-        supabase
+        (supabase as any)
           .from('meal_plan_templates')
           .select('*')
           .order('created_at', { ascending: false })
@@ -500,9 +511,9 @@ export class NutritionService {
         activeMealPlans: activePlansResult.count || 0,
         foodsByCategory,
         recentlyAdded: {
-          foods: recentFoods.data || [],
-          recipes: recentRecipes.data || [],
-          mealPlans: recentMealPlans.data || [],
+          foods: (recentFoods.data || []) as Food[],
+          recipes: (recentRecipes.data || []) as Recipe[],
+          mealPlans: (recentMealPlans.data || []) as MealPlanTemplate[],
         },
       };
     } catch (error) {
@@ -513,7 +524,10 @@ export class NutritionService {
 
   // Bulk Import/Export
   static async bulkImportFoods(foods: Omit<Food, 'id' | 'created_at'>[]) {
-    const { data, error } = await supabase.from('foods').insert(foods).select();
+    const { data, error } = await (supabase as any)
+      .from('foods')
+      .insert(foods)
+      .select();
 
     if (error) throw error;
     return data as Food[];

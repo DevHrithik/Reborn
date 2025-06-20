@@ -14,10 +14,8 @@ import {
   HelpCircle,
   TrendingUp,
   TrendingDown,
-  Eye,
   UserPlus,
   Zap,
-  Star,
   Shield,
   RefreshCw,
   Dumbbell,
@@ -79,7 +77,7 @@ export default function DashboardPage() {
     );
 
     return () => {
-      unsubscribe();
+      unsubscribe.unsubscribe();
       clearInterval(interval);
     };
   }, []);
@@ -199,7 +197,7 @@ export default function DashboardPage() {
     },
   ];
 
-  const recentActivity = metrics.recentActivity.map((activity, index) => ({
+  const recentActivity = metrics.recentActivity.map((activity) => ({
     id: activity.id,
     type: activity.type,
     message: `${activity.title}: ${activity.description}`,
@@ -285,7 +283,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
+    <div className="bg-gradient-to-br from-gray-50 via-blue-50 to-indigo-50">
       <div className="p-6 space-y-8">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -294,7 +292,7 @@ export default function DashboardPage() {
               Dashboard
             </h1>
             <p className="text-lg text-gray-600">
-              Welcome back! Here's what's happening with REBORN.
+              Welcome back! Here&apos;s what&apos;s happening with REBORN.
             </p>
             <p className="text-sm text-gray-500">
               Last updated: {lastUpdated.toLocaleTimeString()}
